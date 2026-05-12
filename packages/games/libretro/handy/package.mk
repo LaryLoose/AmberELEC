@@ -3,8 +3,8 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="handy"
-PKG_VERSION="4e9e072796e5552a9d57f6ab83b3f85f27b17fb6"
-PKG_SHA256="7c21fe578d1ba4271ee07530552b3cfb7deb905147edc3fb7d8c33cf5f45ec4c"
+PKG_VERSION="ae216ac46e15b0f7af20d0d42042d7db1a28ec96"
+PKG_SHA256="f95ca3adf342aa8e5eb31edd091c9a4ba23cfccfa8769e24d8ee47d7fb69951f"
 PKG_LICENSE="Zlib"
 PKG_SITE="https://github.com/libretro/libretro-handy"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

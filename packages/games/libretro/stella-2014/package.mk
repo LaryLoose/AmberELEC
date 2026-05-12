@@ -3,8 +3,8 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="stella-2014"
-PKG_VERSION="3cc89f0d316d6c924a5e3f4011d17421df58e615"
-PKG_SHA256="dd4e8732dfa9017543ac00c0af6c013500734d4d44bee652c43fe67393a6422b"
+PKG_VERSION="eed47e154d1bbda3305e9ef2d486b6710c8973f4"
+PKG_SHA256="0cfde939c99b7fd925d2c0243f15094635c8302a24d9b576bea101ac623b2f21"
 PKG_LICENSE="GPL2"
 PKG_SITE="https://github.com/libretro/stella2014-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

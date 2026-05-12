@@ -3,8 +3,8 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="pcsx_rearmed"
-PKG_VERSION="febf2246848efb8937ab24c562bba20107bb46f0"
-PKG_SHA256="e63175cf80eb1415af8b8cc9d8dbc56987527ee8f58565d120ce37ec8513f895"
+PKG_VERSION="583f8462197f124ac2cdf5c1fd871f4f96a12fe1"
+PKG_SHA256="825f07db432e28e4bd9f473e04e8743eab5737f01b557c965f101c89d4ada598"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/pcsx_rearmed"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -12,7 +12,7 @@ PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="ARM optimized PCSX fork"
 PKG_TOOLCHAIN="manual"
 
-if [[ "${DEVICE}" == RG351P ]] || [[ "${DEVICE}" == RG351V ]]; then
+if [[ "${DEVICE}" == RG351P ]] || [[ "${DEVICE}" == RG351V ]] || [[ "${DEVICE}" == RG351MP ]]; then
   PKG_PATCH_DIRS="rumble"
 fi
 

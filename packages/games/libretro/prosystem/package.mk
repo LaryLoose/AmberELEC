@@ -3,8 +3,8 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="prosystem"
-PKG_VERSION="acae250da8d98b8b9707cd499e2a0bf6d8500652"
-PKG_SHA256="5a376c6621678daff86977de12b1421f1599602683a8d7228f75281ab4274229"
+PKG_VERSION="980edb381b0bf9ea7992caab24039a537aeb510e"
+PKG_SHA256="068ade0d73613e9ff20ecd37f8e3c9a5352c613f07e1d6e5858210f27b639bc9"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/prosystem-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

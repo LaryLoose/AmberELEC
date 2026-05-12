@@ -3,7 +3,7 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="ppsspp"
-PKG_VERSION="a85f748677ba5c1815202ba8c053abb54d2a0865"
+PKG_VERSION="d357e6a32934800d3d80b49f910a603e1b069751"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/hrydgard/ppsspp"
 PKG_URL="https://github.com/hrydgard/ppsspp.git"
@@ -20,7 +20,9 @@ pre_configure_target() {
                          -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
                          -DCMAKE_C_FLAGS_RELEASE="-DNDEBUG" \
                          -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG" \
-                         -DUSE_SYSTEM_FFMPEG=ON \
+                         -DUSE_SYSTEM_FFMPEG=OFF \
+                         -DUSE_FFMPEG=ON \
+                         -DENABLE_FFMPEG=ON \
                          -DUSE_SYSTEM_ZSTD=ON \
                          -DUSE_SYSTEM_LIBZIP=ON \
                          -DUSING_X11_VULKAN=OFF \

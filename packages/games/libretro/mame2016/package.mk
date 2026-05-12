@@ -23,10 +23,7 @@ PKG_MAKE_OPTS_TARGET="REGENIE=1 \
                       PYTHON_EXECUTABLE=python3 \
                       CONFIG=libretro \
                       LIBRETRO_OS=unix \
-                      LIBRETRO_CPU=arm64 \
                       PLATFORM=arm64 \
-                      ARCH= \
-                      TARGET=mame \
                       SUBTARGET=arcade \
                       OSD=retro \
                       USE_SYSTEM_LIB_EXPAT=1 \
@@ -42,7 +39,7 @@ make_target() {
   unset ARCH
   unset DISTRO
   unset PROJECT
-  export ARCHOPTS="-D__aarch64__ -DASMJIT_BUILD_X86"
+  export ARCHOPTS="-D__aarch64__"
   make ${PKG_MAKE_OPTS_TARGET} OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=${LD} AR=${AR} ${MAKEFLAGS}
 }
 

@@ -1,0 +1,20 @@
+diff --git a/Makefile.libretro b/Makefile.libretro
+@@ -765,15 +765,15 @@
+ 	@echo ''
+ 	@echo '- Build tool : bin2c$(EXE_EXT)'
+ 	@rm -f tools/bin2c/bin2c$(EXE_EXT)
+-	$(CC) $(OBJOUT) tools/bin2c/bin2c$(EXE_EXT) tools/bin2c/bin2c.c
++	gcc $(OBJOUT) tools/bin2c/bin2c$(EXE_EXT) tools/bin2c/bin2c.c
+ 
+ tools/dasm7801/dasm7801$(EXE_EXT):
+ 	@echo ''
+ 	@echo '- Build tool : dasm7801$(EXE_EXT)'
+ 	@rm -f tools/dasm7801/dasm7801$(EXE_EXT)
+-	$(CXX) $(OBJOUT) tools/dasm7801/dasm7801$(EXE_EXT) tools/dasm7801/dasm7801.cpp
++	gcc $(OBJOUT) tools/dasm7801/dasm7801$(EXE_EXT) tools/dasm7801/dasm7801.cpp
+ 
+-binary.%.c: %
++binary.%.c: % tools/bin2c/bin2c$(EXE_EXT) tools/dasm7801/dasm7801$(EXE_EXT)
+ 	@echo ''
+ 	@echo '- Import binary file : $<'
+ 	rm -f $(patsubst %.c,%.h,$@) $@

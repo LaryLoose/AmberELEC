@@ -3,8 +3,8 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="pokemini"
-PKG_VERSION="19095803f1434eb980db6e4004187a4b786e20b6"
-PKG_SHA256="ddc19868e876ed4f6edff5e9f5b3801c0d77cf53885f404bdf250c2173ee8126"
+PKG_VERSION="1e17b92c82e996e38327b690b59db6e68f56413b"
+PKG_SHA256="12d936031f0c1031793ceee15a3ab022d0de207a4c76da0b9d24edd2067080c4"
 PKG_LICENSE="GPLv3"
 PKG_SITE="https://github.com/libretro/pokemini"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

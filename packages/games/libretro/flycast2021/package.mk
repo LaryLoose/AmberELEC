@@ -2,8 +2,8 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="flycast2021"
-PKG_VERSION="4c293f306bc16a265c2d768af5d0cea138426054"
-PKG_SHA256="7ce0bd97b095907fd4960c771364c549a54547877b5128af42c73a9257fbec6b"
+PKG_VERSION="b897744e27c730c7519784b2aef12ba7f658de31"
+PKG_SHA256="677a9b4f4870e59dd896cb14852af6bfdcee661823f0b87a25f1430f0bae0972"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/flycast"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -16,15 +16,20 @@ pre_configure_target() {
   sed -i 's/CFLAGS   :=//' ${PKG_BUILD}/Makefile
   sed -i 's/CXXFLAGS   :=//' ${PKG_BUILD}/Makefile
   sed -i 's/LDFLAGS   :=//' ${PKG_BUILD}/Makefile
+
+  sed -i 's/^ASFLAGS.*/ASFLAGS :=/g' ${PKG_BUILD}/Makefile
+
   sed -i 's/define CORE_OPTION_NAME "reicast"/define CORE_OPTION_NAME "flycast2021"/g' core/libretro/libretro_core_option_defines.h
   sed -i 's/"Flycast"/"Flycast 2021"/g' core/libretro/libretro.cpp
   sed -i 's/RETRO_PIXEL_FORMAT_XRGB8888/RETRO_PIXEL_FORMAT_RGB565/g' core/libretro/libretro.cpp
+
   PKG_MAKE_OPTS_TARGET="GIT_VERSION=${PKG_VERSION:0:7}"
 }
 
 pre_make_target() {
   export BUILD_SYSROOT=${SYSROOT_PREFIX}
-  PKG_MAKE_OPTS_TARGET+=" ARCH=arm platform=arm64"
+  export ASFLAGS=""
+  PKG_MAKE_OPTS_TARGET+=" ARCH=arm64 platform=arm64"
 }
 
 makeinstall_target() {

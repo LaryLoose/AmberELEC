@@ -3,7 +3,7 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="hypseus-singe"
-PKG_VERSION="64839aa9975f362f35686c8cec4041c477a8199c"
+PKG_VERSION="8334d98367e0e02b3fe6e390e13560b39e1b1c28"
 PKG_LICENSE="GPL3"
 PKG_SITE="https://github.com/DirtBagXon/hypseus-singe"
 PKG_URL="${PKG_SITE}.git"
@@ -16,7 +16,7 @@ pre_configure_target() {
                       -DCMAKE_RULE_MESSAGES=OFF \
                       -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
                       -DCMAKE_C_FLAGS_RELEASE="-DNDEBUG" \
-                      -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG""
+                      -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG" "
 
   mkdir -p ${INSTALL}/usr/config/distribution/configs/hypseus
   ln -fs /storage/roms/laserdisc/roms ${INSTALL}/usr/config/distribution/configs/hypseus/roms
