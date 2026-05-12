@@ -1,0 +1,12 @@
+--- a/Makefile	2026-04-19 14:21:36.000000000 +0200
++++ b/Makefile	2026-04-19 18:48:45.988537095 +0200
+@@ -260,8 +260,8 @@
+ SDL_LDFLAGS += -lpng
+ endif
+ else
+-GL_CFLAGS := $(shell $(PKG_CONFIG) --cflags gl)
+-GL_LDFLAGS := $(shell $(PKG_CONFIG) --libs gl || echo -lGL)
++#GL_CFLAGS := $(shell $(PKG_CONFIG) --cflags gl)
++#GL_LDFLAGS := $(shell $(PKG_CONFIG) --libs gl || echo -lGL)
+ ifeq ($(NEED_LIBPNG),1)
+ 
