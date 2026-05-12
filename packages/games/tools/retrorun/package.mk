@@ -16,7 +16,8 @@ pre_configure_target() {
 }
 
 make_target() {
-  make config=release ARCH= verbose=1
+  cd ${PKG_BUILD}
+  make platform=odroidgoa ARCH=
 }
 
 makeinstall_target() {
