@@ -1,0 +1,31 @@
+diff --git a/es-app/src/scrapers/ArcadeDBJSONScraper.cpp b/es-app/src/scrapers/ArcadeDBJSONScraper.cpp
+index 961391f33..3d39d3adf 100644
+--- a/es-app/src/scrapers/ArcadeDBJSONScraper.cpp
++++ b/es-app/src/scrapers/ArcadeDBJSONScraper.cpp
+@@ -42,7 +42,7 @@ void ArcadeDBScraper::generateRequests(const ScraperSearchParams& params,
+ 
+ bool ArcadeDBScraper::isSupportedPlatform(SystemData* system)
+ {
+-	return system && system->hasPlatformId(PlatformIds::ARCADE) || system->hasPlatformId(PlatformIds::NEOGEO) || system->hasPlatformId(PlatformIds::LCD_GAMES);
++	return system && (system->hasPlatformId(PlatformIds::ARCADE) || system->hasPlatformId(PlatformIds::NEOGEO) || system->hasPlatformId(PlatformIds::LCD_GAMES));
+ }
+ 
+ const std::set<Scraper::ScraperMediaSource>& ArcadeDBScraper::getSupportedMedias()
+diff --git a/es-app/src/scrapers/Scraper.cpp b/es-app/src/scrapers/Scraper.cpp
+index 755fcbc32..128311f42 100644
+--- a/es-app/src/scrapers/Scraper.cpp
++++ b/es-app/src/scrapers/Scraper.cpp
+@@ -72,6 +72,13 @@ Scraper* Scraper::getScraper(const std::string name)
+ 		if (scrap.first == scraper)
+ 			return scrap.second;
+ 
++	for (auto scrap : Scraper::scrapers)
++		if (scrap.first == "ArcadeDB")
++			return scrap.second;
++
++	if (!Scraper::scrapers.empty())
++		return Scraper::scrapers.front().second;
++
+ 	return nullptr;
+ }
+ 
