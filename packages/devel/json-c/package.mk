@@ -4,8 +4,8 @@
 # Copyright (C) 2019-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="json-c"
-PKG_VERSION="0.18"
-PKG_SHA256="8069b5e6100bb8b9908dcfdd368f0e99bdeea2cb139cba558e536715c8c8ac8e"
+PKG_VERSION="0.18-20240915"
+PKG_SHA256="ef4d9237d9d48d43e9a2b02f2534da212636ef26d558295f8f6ef9169a1c32a4"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/json-c/json-c"
 PKG_URL="https://github.com/json-c/json-c/archive/json-c-${PKG_VERSION%-*}.tar.gz"

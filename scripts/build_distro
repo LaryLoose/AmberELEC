@@ -21,11 +21,11 @@ then
   mkdir target
 fi
 
-# Clean a few packages to ensure the build date and version are updated
-for package in amberelec emulationstation retroarch retrorun lib32
-do
-  ./scripts/clean ${package}
-done
+## Clean a few packages to ensure the build date and version are updated
+#for package in amberelec emulationstation retroarch retrorun lib32
+#do
+#  ./scripts/clean ${package}
+#done
 
 if [ "${ARCH}" == "aarch64" ]
 then

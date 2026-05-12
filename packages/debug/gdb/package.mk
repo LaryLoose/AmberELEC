@@ -13,16 +13,17 @@ PKG_LONGDESC="GNU Project debugger, allows you to see what is going on inside an
 # gdb could fail on runtime if build with LTO support
 
 PKG_CONFIGURE_OPTS_TARGET="bash_cv_have_mbstate_t=set \
+						   --with-system-readline \
                            --disable-shared \
                            --enable-static \
                            --with-auto-load-safe-path=/ \
-			   --with-python=no \
-			   --with-guile=no \
-			   --with-mpfr=no \
-			   --with-intel-pt=no \
-			   --with-babeltrace=no \
-			   --with-expat=yes \
-			   --disable-source-highlight \
+						   --with-python=no \
+						   --with-guile=no \
+						   --with-mpfr=no \
+						   --with-intel-pt=no \
+						   --with-babeltrace=no \
+						   --with-expat=yes \
+						   --disable-source-highlight \
                            --disable-nls \
                            --disable-sim \
                            --without-x \
