@@ -7,18 +7,26 @@ PKG_VERSION=""
 PKG_SHA256=""
 PKG_ARCH="any"
 PKG_LICENSE="OSS"
-PKG_DEPENDS_TARGET="toolchain enable-oga-sleep"
+PKG_DEPENDS_TARGET="toolchain enable-oga-sleep libevdev alsa-lib"
 PKG_SITE=""
 PKG_URL=""
 PKG_LONGDESC="Support scripts for the RG351P/M/V"
 PKG_TOOLCHAIN="manual"
 
+make_target() {
+  cd ${PKG_BUILD}
+  ${CC} ${CFLAGS} ${LDFLAGS} -o battery battery.c
+  ${CC} ${CFLAGS} -I${SYSROOT_PREFIX}/usr/include/libevdev-1.0 ${LDFLAGS} -levdev -lasound -o volume_sense volume_sense.c
+}
+
 makeinstall_target() {
 	mkdir -p ${INSTALL}/usr/bin
 	cp headphone_sense.sh ${INSTALL}/usr/bin
 	cp battery.sh ${INSTALL}/usr/bin
+	cp battery ${INSTALL}/usr/bin
 	cp odroidgoa_utils.sh ${INSTALL}/usr/bin
 	cp volume_sense.sh ${INSTALL}/usr/bin
+	cp volume_sense ${INSTALL}/usr/bin
 	cp adckeys.sh ${INSTALL}/usr/bin
 	cp adckeys.py ${INSTALL}/usr/bin
 	cp joyled.sh ${INSTALL}/usr/bin

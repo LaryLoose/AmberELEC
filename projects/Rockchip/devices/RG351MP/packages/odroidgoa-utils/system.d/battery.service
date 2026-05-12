@@ -6,7 +6,7 @@ Before=amberelec.target
 [Service]
 Environment=HOME=/storage
 EnvironmentFile=/etc/profile
-ExecStart=/usr/bin/battery.sh
+ExecStart=/usr/bin/battery
 Restart=on-failure
 
 [Install]
