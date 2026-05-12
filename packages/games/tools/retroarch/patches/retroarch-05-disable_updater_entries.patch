@@ -2,7 +2,7 @@ diff --git a/menu/menu_displaylist.c b/menu/menu_displaylist.c
 index 2a7db944af..821fab20e0 100644
 --- a/menu/menu_displaylist.c
 +++ b/menu/menu_displaylist.c
-@@ -14748,52 +14748,52 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
+@@ -14921,40 +14921,40 @@
  #endif /* HAVE_UPDATE_CORES */
  
  #if defined(HAVE_COMPRESSION) && !defined(HAVE_MIST)
@@ -12,12 +12,12 @@ index 2a7db944af..821fab20e0 100644
 -                        MENU_ENUM_LABEL_DOWNLOAD_CORE_SYSTEM_FILES,
 -                        MENU_SETTING_ACTION, 0, 0, NULL))
 -                  count++;
-+               // if (menu_entries_append(info->list,
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DOWNLOAD_CORE_SYSTEM_FILES),
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_DOWNLOAD_CORE_SYSTEM_FILES),
-+                        // MENU_ENUM_LABEL_DOWNLOAD_CORE_SYSTEM_FILES,
-+                        // MENU_SETTING_ACTION, 0, 0, NULL))
-+                  // count++;
++//               if (menu_entries_append(info->list,
++//                        msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DOWNLOAD_CORE_SYSTEM_FILES),
++//                        msg_hash_to_str(MENU_ENUM_LABEL_DOWNLOAD_CORE_SYSTEM_FILES),
++//                        MENU_ENUM_LABEL_DOWNLOAD_CORE_SYSTEM_FILES,
++//                        MENU_SETTING_ACTION, 0, 0, NULL))
++//                  count++;
  #endif
  
 -               if (menu_entries_append(info->list,
@@ -26,22 +26,22 @@ index 2a7db944af..821fab20e0 100644
 -                        MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS,
 -                        MENU_SETTING_ACTION, 0, 0, NULL))
 -                  count++;
-+               // if (menu_entries_append(info->list,
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DOWNLOAD_CORE_CONTENT),
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS),
-+                        // MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS,
-+                        // MENU_SETTING_ACTION, 0, 0, NULL))
-+                  // count++;
++//               if (menu_entries_append(info->list,
++//                        msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DOWNLOAD_CORE_CONTENT),
++//                        msg_hash_to_str(MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS),
++//                        MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS,
++//                        MENU_SETTING_ACTION, 0, 0, NULL))
++//                  count++;
  
  #ifdef HAVE_ONLINE_UPDATER
 -               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
 -                     MENU_ENUM_LABEL_UPDATER_SETTINGS,
 -                     PARSE_ACTION, false) == 0)
 -                  count++;
-+               // if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
-+                     // MENU_ENUM_LABEL_UPDATER_SETTINGS,
-+                     // PARSE_ACTION, false) == 0)
-+                  // count++;
++//               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
++//                     MENU_ENUM_LABEL_UPDATER_SETTINGS,
++//                     PARSE_ACTION, false) == 0)
++//                  count++;
  #endif
  
 -               if (menu_entries_append(info->list,
@@ -50,47 +50,26 @@ index 2a7db944af..821fab20e0 100644
 -                        MENU_ENUM_LABEL_PL_THUMBNAILS_UPDATER_LIST,
 -                        MENU_SETTING_ACTION, 0, 0, NULL))
 -                  count++;
-+               // if (menu_entries_append(info->list,
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PL_THUMBNAILS_UPDATER_LIST),
-+                        // msg_hash_to_str(MENU_ENUM_LABEL_PL_THUMBNAILS_UPDATER_LIST),
-+                        // MENU_ENUM_LABEL_PL_THUMBNAILS_UPDATER_LIST,
-+                        // MENU_SETTING_ACTION, 0, 0, NULL))
-+                  // count++;
++//               if (menu_entries_append(info->list,
++//                        msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PL_THUMBNAILS_UPDATER_LIST),
++//                        msg_hash_to_str(MENU_ENUM_LABEL_PL_THUMBNAILS_UPDATER_LIST),
++//                        MENU_ENUM_LABEL_PL_THUMBNAILS_UPDATER_LIST,
++//                        MENU_SETTING_ACTION, 0, 0, NULL))
++//                  count++;
  
- #if 0
- /* Thumbnailpack removal */
--               if (settings->bools.menu_show_legacy_thumbnail_updater)
--               {
--                  if (menu_entries_append(info->list,
--                           msg_hash_to_str(MENU_ENUM_LABEL_VALUE_THUMBNAILS_UPDATER_LIST),
--                           msg_hash_to_str(MENU_ENUM_LABEL_THUMBNAILS_UPDATER_LIST),
--                           MENU_ENUM_LABEL_THUMBNAILS_UPDATER_LIST,
--                           MENU_SETTING_ACTION, 0, 0, NULL))
--                     count++;
--               }
-+               // if (settings->bools.menu_show_legacy_thumbnail_updater)
-+               // {
-+                  // if (menu_entries_append(info->list,
-+                           // msg_hash_to_str(MENU_ENUM_LABEL_VALUE_THUMBNAILS_UPDATER_LIST),
-+                           // msg_hash_to_str(MENU_ENUM_LABEL_THUMBNAILS_UPDATER_LIST),
-+                           // MENU_ENUM_LABEL_THUMBNAILS_UPDATER_LIST,
-+                           // MENU_SETTING_ACTION, 0, 0, NULL))
-+                     // count++;
-+               // }
- #endif
  #ifdef HAVE_NETWORKING
 -               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
 -                        MENU_ENUM_LABEL_NETWORK_ON_DEMAND_THUMBNAILS,
 -                        PARSE_ONLY_BOOL, false) != -1)
 -                  count++;
-+               // if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
-+                        // MENU_ENUM_LABEL_NETWORK_ON_DEMAND_THUMBNAILS,
-+                        // PARSE_ONLY_BOOL, false) != -1)
-+                  // count++;
++//              if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
++//                       MENU_ENUM_LABEL_NETWORK_ON_DEMAND_THUMBNAILS,
++//                       PARSE_ONLY_BOOL, false) != -1)
++//                 count++;
  #endif
  
  #ifdef HAVE_COMPRESSION
-@@ -14810,20 +14810,20 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
+@@ -14971,20 +14971,20 @@
  #endif
  
  #ifdef HAVE_UPDATE_ASSETS
@@ -123,7 +102,7 @@ index 2a7db944af..821fab20e0 100644
  
                 if (menu_entries_append(info->list,
                          msg_hash_to_str(MENU_ENUM_LABEL_VALUE_UPDATE_CHEATS),
-@@ -14834,21 +14834,21 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
+@@ -14995,21 +14995,21 @@
  #endif
  #ifdef HAVE_LIBRETRODB
  #if !defined(VITA)
@@ -157,7 +136,7 @@ index 2a7db944af..821fab20e0 100644
  
  #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
                 if (BIT32_GET(flags.flags, GFX_CTX_FLAGS_SHADERS_CG))
-@@ -14861,15 +14861,15 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
+@@ -15022,15 +15022,15 @@
                       count++;
                 }
  

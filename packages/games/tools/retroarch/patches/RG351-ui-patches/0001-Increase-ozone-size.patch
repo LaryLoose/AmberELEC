@@ -14,9 +14,9 @@ index 7301a505c4..b61e40ad4f 100644
 @@ -9223,7 +9223,7 @@ static void ozone_render(void *data,
     /* Check whether screen dimensions or menu scale
      * factor have changed */
-    scale_factor           = gfx_display_get_dpi_scale(p_disp, settings,
--         width, height, false, false);
-+         width, height, false, false) * 2.000f;
-    thumbnail_scale_factor = settings->floats.ozone_thumbnail_scale_factor;
- 
-    if ((scale_factor != ozone->last_scale_factor) ||
+    scale_factor               = gfx_display_get_dpi_scale(p_disp, settings,
+-            width, height, false, false);
++            width, height, false, false) * 2.000f;
+    thumbnail_scale_factor     = settings->floats.ozone_thumbnail_scale_factor;
+    padding_factor             = settings->floats.ozone_padding_factor;
+    font_scale_factor_global   = (font_scale == 1) ? (settings->floats.ozone_font_scale_factor_global) : 1.0f;

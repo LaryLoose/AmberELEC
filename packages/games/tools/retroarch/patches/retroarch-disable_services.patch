@@ -2,40 +2,42 @@ diff --git a/menu/drivers/ozone.c b/menu/drivers/ozone.c
 index e263fbd5d2..767125ca8f 100644
 --- a/menu/drivers/ozone.c
 +++ b/menu/drivers/ozone.c
-@@ -8928,20 +8928,20 @@ static void *ozone_init(void **userdata, bool video_is_threaded)
-    if (settings->bools.menu_content_show_netplay)
-       ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_NETPLAY;
+@@ -5203,20 +5203,20 @@ static void *ozone_init(void **userdata, bool video_is_threaded)
+       ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_VIDEO;
  #endif
--   if (      settings->bools.menu_content_show_add
+ 
+-   if (      settings->uints.menu_content_show_add_entry == MENU_ADD_CONTENT_ENTRY_DISPLAY_PLAYLISTS_TAB
 -         && !settings->bools.kiosk_mode_enable)
--      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_ADD;
-+//   if (      settings->bools.menu_content_show_add
-+//         && !settings->bools.kiosk_mode_enable)
-+//      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_ADD;
- #endif /* 0 */
+-      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_ADD;
+-
 -#if defined(HAVE_DYNAMIC)
 -   if (settings->uints.menu_content_show_contentless_cores !=
 -         MENU_CONTENTLESS_CORES_DISPLAY_NONE)
--      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_CONTENTLESS_CORES;
+-      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_CONTENTLESS_CORES;
 -#endif
 -
 -#if defined(HAVE_LIBRETRODB)
 -   if (settings->bools.menu_content_show_explore)
--      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_EXPLORE;
+-      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_EXPLORE;
 -#endif
++//   if (      settings->uints.menu_content_show_add_entry == MENU_ADD_CONTENT_ENTRY_DISPLAY_PLAYLISTS_TAB
++//         && !settings->bools.kiosk_mode_enable)
++//      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_ADD;
++//
 +//#if defined(HAVE_DYNAMIC)
 +//   if (settings->uints.menu_content_show_contentless_cores !=
 +//         MENU_CONTENTLESS_CORES_DISPLAY_NONE)
-+//      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_CONTENTLESS_CORES;
++//      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_CONTENTLESS_CORES;
 +//#endif
-+
++//
 +//#if defined(HAVE_LIBRETRODB)
 +//   if (settings->bools.menu_content_show_explore)
-+//      ozone->tabs[++ozone->system_tab_end]      = OZONE_SYSTEM_TAB_EXPLORE;
++//      ozone->tabs[++ozone->system_tab_end] = OZONE_SYSTEM_TAB_EXPLORE;
 +//#endif
+ }
  
-    for (i = 0; i < OZONE_TAB_MAX_LENGTH; i++)
-       ozone->tab_selection[i]                   = 0;
+ static int ozone_get_entries_padding_old_list(ozone_handle_t* ozone)
+
 diff --git a/menu/menu_setting.c b/menu/menu_setting.c
 index 459ad253c9..f9c70a2765 100644
 --- a/menu/menu_setting.c
