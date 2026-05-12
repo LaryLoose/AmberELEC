@@ -8,10 +8,10 @@ PKG_NAME="scummvmsa"
 PKG_LICENSE="GPL2"
 PKG_SITE="https://github.com/scummvm/scummvm"
 #PKG_URL=""
-PKG_VERSION="c8102c4c6f7fa4450972544bc35314eb2639c0de"
-PKG_SHA256="e467b7f4a83985428540212665c3b872c4e2735b807b31bea7372b4ac9239a3b"
+PKG_VERSION="d21ef2e4cb9a9c979b111375624bdf5b66d91bfa"
+PKG_SHA256="ddd3ef894544ffb1c973e90e7290b187d0deadfe7ce76276c7e53c076a07a229"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_net freetype fluidsynth libmad libtheora"
+PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_net freetype fluidsynth libmad libtheora libmpeg2 fribidi libjpeg-turbo curl tinyxml giflib"
 PKG_DEPENDS_UNPACK="scummvm"
 PKG_LONGDESC="ScummVM is a program which allows you to run certain classic graphical point-and-click adventure games, provided you already have their data files."
 
@@ -25,10 +25,12 @@ pre_configure_target() {
   if [[ "${DEVICE}" == RG552 ]]; then
     sed -i "s|static const int guiBaseValues\[\] = { 150, 125, 100, 75, -1 };|static const int guiBaseValues\[\] = { 250, 125, 100, 75, -1 };|g" ${PKG_BUILD}/gui/options.cpp
   fi
-  TARGET_CONFIGURE_OPTS="--host=${TARGET_NAME} --backend=sdl --with-sdl-prefix=${SYSROOT_PREFIX}/usr/bin --disable-debug --enable-release --enable-vkeybd --opengl-mode=gles2"
+  TARGET_CONFIGURE_OPTS="--host=${TARGET_NAME} --backend=sdl --with-sdl-prefix=${SYSROOT_PREFIX}/usr/bin --disable-debug --enable-release --enable-all-engines --enable-vkeybd --opengl-mode=gles2\
+  --enable-plugins --default-dynamic"
 
   #enable monkey4
-  sed -i 's|add_engine monkey4 "Escape from Monkey Island" no|add_engine monkey4 "Escape from Monkey Island" yes|g' ${PKG_BUILD}/engines/grim/configure.engine
+  #sed -i 's|add_engine monkey4 "Escape from Monkey Island" no|add_engine monkey4 "Escape from Monkey Island" yes|g' ${PKG_BUILD}/engines/grim/configure.engine
+
 }
 
 post_makeinstall_target() {
@@ -38,8 +40,10 @@ post_makeinstall_target() {
     sed -i "s|gui_scale=100|gui_scale=250|g" ${INSTALL}/usr/config/scummvm/scummvm.ini
   fi
   
-  mkdir -p ${INSTALL}/usr/config/distribution/modules/
-  cp "${PKG_DIR}/Scan ScummVM Games.sh" ${INSTALL}/usr/config/distribution/modules/
+  cp -rf ${PKG_DIR}/extra/* ${INSTALL}/usr/local/share/scummvm/
+  
+ # mkdir -p ${INSTALL}/usr/config/distribution/modules/
+ # cp "${PKG_DIR}/Scan ScummVM Games.sh" ${INSTALL}/usr/config/distribution/modules/
 
   mv ${INSTALL}/usr/local/bin ${INSTALL}/usr/
   cp -rf ${PKG_DIR}/scummvm.sh ${INSTALL}/usr/bin
@@ -49,7 +53,7 @@ post_makeinstall_target() {
     rm -rf "${INSTALL}/usr/local/share/${i}"
   done
 
-  for i in residualvm.zip scummclassic.zip; do
-    rm -rf "${INSTALL}/usr/local/share/scummvm/${i}"
-  done
+#  for i in residualvm.zip scummclassic.zip; do
+#    rm -rf "${INSTALL}/usr/local/share/scummvm/${i}"
+#  done
 }

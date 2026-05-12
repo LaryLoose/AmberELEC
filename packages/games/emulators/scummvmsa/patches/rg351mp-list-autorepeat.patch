@@ -1,0 +1,131 @@
+diff --git a/gui/launcher.cpp b/gui/launcher.cpp
+index a33b27f57e0..78027ac1e68 100644
+--- a/gui/launcher.cpp
++++ b/gui/launcher.cpp
+@@ -672,6 +672,16 @@ void LauncherDialog::handleOtherEvent(const Common::Event &evt) {
+ 			path = node.getParent().getPath();
+ 		doGameDetection(path);
+ 	}
++	// Handle gamepad button events for launcher navigation
++	else if (evt.type == Common::EVENT_JOYBUTTON_DOWN) {
++		if (evt.joystick.button == Common::JOYSTICK_BUTTON_B) {
++			// Button B: Start game
++			handleCommand(nullptr, kStartCmd, 0);
++		} else if (evt.joystick.button == Common::JOYSTICK_BUTTON_X) {
++			// Button X: Game Options
++			handleCommand(nullptr, kEditGameCmd, 0);
++		}
++	}
+ }
+ 
+ bool LauncherDialog::doGameDetection(const Common::Path &path) {
+diff --git a/gui/widgets/list.cpp b/gui/widgets/list.cpp
+index b9362f7059a..772f4aa72d7 100644
+--- a/gui/widgets/list.cpp
++++ b/gui/widgets/list.cpp
+@@ -32,6 +32,11 @@
+ 
+ namespace GUI {
+ 
++enum {
++	kListKeyRepeatInitialDelay = 500,
++	kListKeyRepeatSustainDelay = 100
++};
++
+ bool ListWidgetDefaultMatcher(void *, int, const Common::U32String &item, const Common::U32String &token) {
+ 	return item.contains(token);
+ }
+@@ -54,6 +59,7 @@ ListWidget::ListWidget(Dialog *boss, const Common::String &name, const Common::U
+ 	_lastSelectionStartItem = -1;
+ 	_multiSelectEnabled = false;
+ 	_currentKeyDown = 0;
++	_nextKeyRepeatTime = 0;
+ 
+ 	_quickSelectTime = 0;
+ 
+@@ -99,6 +105,7 @@ ListWidget::ListWidget(Dialog *boss, int x, int y, int w, int h, bool scale, con
+ 	_lastSelectionStartItem = -1;
+ 	_multiSelectEnabled = false;
+ 	_currentKeyDown = 0;
++	_nextKeyRepeatTime = 0;
+ 
+ 	_quickSelectTime = 0;
+ 
+@@ -336,6 +343,14 @@ void ListWidget::scrollBarRecalc() {
+ void ListWidget::handleTickle() {
+ 	if (_editMode)
+ 		EditableWidget::handleTickle();
++
++	if (!_editMode && (_currentKeyDown == Common::KEYCODE_UP || _currentKeyDown == Common::KEYCODE_DOWN ||
++						  _currentKeyDown == Common::KEYCODE_KP8 || _currentKeyDown == Common::KEYCODE_KP2)) {
++		const uint32 now = g_system->getMillis();
++		if (now >= _nextKeyRepeatTime)
++			handleKeyDown(_repeatKeyState);
++	}
++
+ 	_scrollBar->handleTickle();
+ }
+ 
+@@ -581,6 +596,13 @@ bool ListWidget::handleKeyDown(Common::KeyState state) {
+ 			}
+ 			// fall through
+ 		case Common::KEYCODE_DOWN:
++			if (_currentKeyDown != state.keycode)
++				_nextKeyRepeatTime = g_system->getMillis() + kListKeyRepeatInitialDelay;
++			else
++				_nextKeyRepeatTime = g_system->getMillis() + kListKeyRepeatSustainDelay;
++			_repeatKeyState = state;
++			_currentKeyDown = state.keycode;
++
+ 			// Down: Add next item to selection (Ctrl+Click logic without toggle)
+ 			if (_selectedItem < (int)_list.size() - 1) {
+ 				int newItem = _selectedItem + 1;
+@@ -662,6 +684,13 @@ bool ListWidget::handleKeyDown(Common::KeyState state) {
+ 			}
+ 			// fall through
+ 		case Common::KEYCODE_UP:
++			if (_currentKeyDown != state.keycode)
++				_nextKeyRepeatTime = g_system->getMillis() + kListKeyRepeatInitialDelay;
++			else
++				_nextKeyRepeatTime = g_system->getMillis() + kListKeyRepeatSustainDelay;
++			_repeatKeyState = state;
++			_currentKeyDown = state.keycode;
++
+ 			// Up: Add previous item to selection (Ctrl+Click logic without toggle)
+ 			if (_selectedItem > 0) {
+ 				int newItem = _selectedItem - 1;
+@@ -738,8 +767,10 @@ bool ListWidget::handleKeyDown(Common::KeyState state) {
+ }
+ 
+ bool ListWidget::handleKeyUp(Common::KeyState state) {
+-	if (state.keycode == _currentKeyDown)
++	if (state.keycode == _currentKeyDown) {
+ 		_currentKeyDown = 0;
++		_nextKeyRepeatTime = 0;
++	}
+ 	return true;
+ }
+ 
+@@ -752,6 +783,8 @@ void ListWidget::receivedFocusWidget() {
+ 
+ void ListWidget::lostFocusWidget() {
+ 	_inversion = ThemeEngine::kTextInversion;
++	_currentKeyDown = 0;
++	_nextKeyRepeatTime = 0;
+ 
+ 	// If we lose focus, we simply forget the user changes
+ 	_editMode = false;
+
+diff --git a/gui/widgets/list.h b/gui/widgets/list.h
+index f99b2574465..38cfe0cb3a8 100644
+--- a/gui/widgets/list.h
++++ b/gui/widgets/list.h
+@@ -76,6 +76,8 @@ protected:
+ 	bool			_multiSelectEnabled;	/// Flag for multi-selection
+ 	ScrollBarWidget	*_scrollBar;
+ 	int				_currentKeyDown;
++	uint32			_nextKeyRepeatTime;
++	Common::KeyState	_repeatKeyState;
+ 
+ 	Common::String	_quickSelectStr;
+ 	uint32			_quickSelectTime;
