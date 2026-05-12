@@ -1,0 +1,53 @@
+diff --git a/es-app/src/FileData.cpp b/es-app/src/FileData.cpp
+index 9abb1558e..2c7c56c8c 100644
+--- a/es-app/src/FileData.cpp
++++ b/es-app/src/FileData.cpp
+@@ -18,6 +18,7 @@
+ #include <assert.h>
+ #include "SystemConf.h"
+ #include "InputManager.h"
++#include "watchers/WatchersManager.h"
+ #include "scrapers/ThreadedScraper.h"
+ #include "Gamelist.h" 
+ #include "ApiSystem.h"
+@@ -802,6 +803,8 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
+ 	else
+ 		window->init(hideWindow);
+ 
++	WatchersManager::getInstance()->ResetAll();
++
+ 	VolumeControl::getInstance()->init();
+ 	AudioManager::getInstance()->init();
+ 
+diff --git a/es-core/src/watchers/WatchersManager.cpp b/es-core/src/watchers/WatchersManager.cpp
+index 1a05e6971..85c6ef05f 100644
+--- a/es-core/src/watchers/WatchersManager.cpp
++++ b/es-core/src/watchers/WatchersManager.cpp
+@@ -49,6 +49,14 @@ void WatchersManager::ResetComponent(IWatcher* instance)
+ 	}
+ }
+ 
++void WatchersManager::ResetAll()
++{
++	std::unique_lock<std::mutex> lock(mWatchersLock);
++
++	for (auto comp : mWatchers)
++		comp->nextCheckTime = 0;
++}
++
+ void WatchersManager::RegisterComponent(IWatcher* instance)
+ {
+ 	std::unique_lock<std::mutex> lock(mWatchersLock);
+diff --git a/es-core/src/watchers/WatchersManager.h b/es-core/src/watchers/WatchersManager.h
+index 1b2e3f4..a9c1d82 100644
+--- a/es-core/src/watchers/WatchersManager.h
++++ b/es-core/src/watchers/WatchersManager.h
+@@ -50,6 +50,7 @@ public:
+ 	static void RegisterNotify(IWatcherNotify* instance);
+ 	static void UnregisterNotify(IWatcherNotify* instance);
+ 
+ 	static void ResetComponent(IWatcher* instance);
++	static void ResetAll();
+ 
+ 	static WatchersManager* getInstance();
+ 	static void             stop();
