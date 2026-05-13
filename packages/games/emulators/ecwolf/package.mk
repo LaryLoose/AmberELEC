@@ -2,9 +2,9 @@
 # Copyright (C) 2021-present Shanti Gilbert (https://github.com/shantigilbert)
 
 PKG_NAME="ecwolf"
-PKG_VERSION="db154c482943e89c16b8d4de23120e66f5312042"
+PKG_VERSION="1bff92d43bc1c1b6e9c4c03f0fd3c7ae9c972f9e"
 PKG_LICENSE="GPLv2"
-PKG_SITE="https://bitbucket.org/ecwolf/ecwolf"
+PKG_SITE="https://github.com/ECWolfEngine/ECWolf"
 PKG_URL="${PKG_SITE}.git"
 PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_mixer SDL2_net ecwolf:host"
 PKG_DEPENDS_HOST="SDL2:host SDL2_mixer:host SDL2_net:host"
