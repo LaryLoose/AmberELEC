@@ -1,0 +1,13 @@
+diff --git a/es-core/src/components/TextComponent.cpp b/es-core/src/components/TextComponent.cpp
+index a23d44507..f45a3e2c7 100644
+--- a/es-core/src/components/TextComponent.cpp
++++ b/es-core/src/components/TextComponent.cpp
+@@ -6,7 +6,7 @@
+ 
+ #define AUTO_SCROLL_RESET_DELAY 6000
+ #define AUTO_SCROLL_DELAY 6000 // ms to wait before we start to scroll
+-#define AUTO_SCROLL_SPEED 150 // ms between scrolls
++#define AUTO_SCROLL_SPEED 50 // ms between scrolls
+ 
+ TextComponent::TextComponent(Window* window) : GuiComponent(window), 
+ 	mFont(Font::get(FONT_SIZE_MEDIUM)), mUppercase(false), mColor(0x000000FF), mAutoCalcExtent(true, true),
