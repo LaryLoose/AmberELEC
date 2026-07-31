@@ -1,0 +1,11 @@
+--- a/es-app/src/guis/GuiGameScraper.cpp
++++ b/es-app/src/guis/GuiGameScraper.cpp
+@@ -77,4 +77,5 @@ GuiGameScraper::GuiGameScraper(Window* window, ScraperSearchParams params, std::function<void(const ScraperSearchResult&)> doneFunc) : GuiComponent(window),
+ 	//       if(mClose)
+ 	//         delete this;
+ 	mSearch->setAcceptCallback([this, doneFunc](const ScraperSearchResult& result) { doneFunc(result); close(); });
++	mSearch->setSkipCallback([this] { close(); });
+ 	mSearch->setCancelCallback([&] { delete this; });
+ 
+ 	if (Renderer::ScreenSettings::fullScreenMenus())
+ 		setSize(Renderer::getScreenWidth(), Renderer::getScreenHeight());
