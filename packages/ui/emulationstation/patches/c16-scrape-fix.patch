@@ -1,0 +1,12 @@
+--- a/es-app/src/PlatformId.cpp
++++ b/es-app/src/PlatformId.cpp
+@@ -159,6 +159,7 @@
+ 		{ "pet",			COMMODORE_PET },
+ 		{ "cpet",			COMMODORE_PET },
+ 		{ "cplus4",					COMMODORE_PLUS4 },
++		{ "c16",					COMMODORE_PLUS4 },
+ 		{ "atom",			ACORN_ATOM },
+ 		{ "bbcmicro",			ACORN_BBC_MICRO },
+ 		{ "bbc",					ACORN_BBC_MICRO },
+
+
