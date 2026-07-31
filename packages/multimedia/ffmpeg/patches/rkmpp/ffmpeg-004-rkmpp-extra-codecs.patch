@@ -1,0 +1,69 @@
+Wire the remaining VDPU2-capable codecs (MPEG-2, MPEG-4 part 2, H.263, MJPEG)
+into ffmpeg's rkmpp decoder. The RK3326 VDPU2 block advertises these in MPP's
+CAP_CODING_VDPU, so mpp_check_support_format() accepts them and they decode in
+hardware (unlike VP9, which the SoC cannot do). Software decoders remain the
+default; HW is only attempted for codecs listed in mpv's --hwdec-codecs, and MPP
+init failure still falls back to software automatically.
+--- a/libavcodec/rkmppdec.c
++++ b/libavcodec/rkmppdec.c
+@@ -71,6 +71,10 @@
+     case AV_CODEC_ID_HEVC:          return MPP_VIDEO_CodingHEVC;
+     case AV_CODEC_ID_VP8:           return MPP_VIDEO_CodingVP8;
+     case AV_CODEC_ID_VP9:           return MPP_VIDEO_CodingVP9;
++    case AV_CODEC_ID_MPEG2VIDEO:    return MPP_VIDEO_CodingMPEG2;
++    case AV_CODEC_ID_MPEG4:         return MPP_VIDEO_CodingMPEG4;
++    case AV_CODEC_ID_H263:          return MPP_VIDEO_CodingH263;
++    case AV_CODEC_ID_MJPEG:         return MPP_VIDEO_CodingMJPEG;
+     default:                        return MPP_VIDEO_CodingUnused;
+     }
+ }
+@@ -576,3 +580,7 @@
+ RKMPP_DEC(hevc,  AV_CODEC_ID_HEVC,          "hevc_mp4toannexb")
+ RKMPP_DEC(vp8,   AV_CODEC_ID_VP8,           NULL)
+ RKMPP_DEC(vp9,   AV_CODEC_ID_VP9,           NULL)
++RKMPP_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO,    NULL)
++RKMPP_DEC(mpeg4, AV_CODEC_ID_MPEG4,         NULL)
++RKMPP_DEC(h263,  AV_CODEC_ID_H263,          NULL)
++RKMPP_DEC(mjpeg, AV_CODEC_ID_MJPEG,         NULL)
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -137,6 +137,7 @@
+ extern AVCodec ff_h261_decoder;
+ extern AVCodec ff_h263_encoder;
+ extern AVCodec ff_h263_decoder;
++extern AVCodec ff_h263_rkmpp_decoder;
+ extern AVCodec ff_h263i_decoder;
+ extern AVCodec ff_h263p_encoder;
+ extern AVCodec ff_h263p_decoder;
+@@ -188,6 +189,7 @@
+ extern AVCodec ff_mimic_decoder;
+ extern AVCodec ff_mjpeg_encoder;
+ extern AVCodec ff_mjpeg_decoder;
++extern AVCodec ff_mjpeg_rkmpp_decoder;
+ extern AVCodec ff_mjpegb_decoder;
+ extern AVCodec ff_mmvideo_decoder;
+ extern AVCodec ff_mobiclip_decoder;
+@@ -196,8 +198,10 @@
+ extern AVCodec ff_mpeg1video_decoder;
+ extern AVCodec ff_mpeg2video_encoder;
+ extern AVCodec ff_mpeg2video_decoder;
++extern AVCodec ff_mpeg2_rkmpp_decoder;
+ extern AVCodec ff_mpeg4_encoder;
+ extern AVCodec ff_mpeg4_decoder;
++extern AVCodec ff_mpeg4_rkmpp_decoder;
+ extern AVCodec ff_mpeg4_crystalhd_decoder;
+ extern AVCodec ff_mpeg4_v4l2m2m_decoder;
+ extern AVCodec ff_mpeg4_mmal_decoder;
+--- a/configure
++++ b/configure
+@@ -3172,6 +3172,10 @@
+ vp9_mediacodec_decoder_deps="mediacodec"
+ vp9_qsv_decoder_select="qsvdec"
+ vp9_rkmpp_decoder_deps="rkmpp"
++mpeg2_rkmpp_decoder_deps="rkmpp"
++mpeg4_rkmpp_decoder_deps="rkmpp"
++h263_rkmpp_decoder_deps="rkmpp"
++mjpeg_rkmpp_decoder_deps="rkmpp"
+ vp9_vaapi_encoder_deps="VAEncPictureParameterBufferVP9"
+ vp9_vaapi_encoder_select="vaapi_encode"
+ vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"

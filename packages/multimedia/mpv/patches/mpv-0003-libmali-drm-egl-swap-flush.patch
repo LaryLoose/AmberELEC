@@ -1,0 +1,13 @@
+--- a/video/out/opengl/context_drm_egl.c
++++ b/video/out/opengl/context_drm_egl.c
+@@ -589,6 +589,10 @@
+ 
+     wait_fence(ctx);
+ 
++    // libmali's eglSwapBuffers needs an explicitly flushed GL command stream;
++    // without it it crashes in osup_sync_object_wait() on some clips at teardown.
++    p->gl.Flush();
++
+     eglSwapBuffers(p->egl.display, p->egl.surface);
+ 
+     struct gbm_bo *new_bo = gbm_surface_lock_front_buffer(p->gbm.surface);

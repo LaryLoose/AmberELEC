@@ -7,7 +7,7 @@ PKG_SHA256="bb3563fb8c8a544ba1c31e43e751bf76156d5f13206b56f27d831b97ae634c7f"
 PKG_LICENSE="GPLv2+"
 PKG_SITE="https://github.com/mpv-player/mpv"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain ffmpeg SDL2 ${OPENGLES} waf:host"
+PKG_DEPENDS_TARGET="toolchain ffmpeg SDL2 libdrm ${OPENGLES} waf:host"
 PKG_LONGDESC="Video player based on MPlayer/mplayer2 https://mpv.io"
 PKG_TOOLCHAIN="manual"
 
@@ -17,7 +17,7 @@ pre_configure_target() {
 
 configure_target() {
   cd ${PKG_BUILD}
-  ${PKG_BUILD}/waf configure --enable-sdl2 --enable-sdl2-gamepad --disable-pulse --enable-egl --disable-libbluray --disable-gl
+  ${PKG_BUILD}/waf configure --enable-sdl2 --enable-sdl2-gamepad --disable-pulse --enable-egl --enable-drm --enable-gbm --enable-egl-drm --disable-libbluray
 }
 
 make_target() {

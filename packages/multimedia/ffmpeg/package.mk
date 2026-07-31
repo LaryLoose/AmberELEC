@@ -3,14 +3,14 @@
 # Copyright (C) 2017-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="ffmpeg"
-PKG_VERSION="4.4.1"
-PKG_SHA256="eadbad9e9ab30b25f5520fbfde99fae4a92a1ae3c0257a8d68569a4651e30e02"
+PKG_VERSION="4.4.7"
+PKG_SHA256="39e7d6d0af050a0a8aae737d610d77264e67b9657f3a346f72bba03312565e2a"
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://ffmpeg.org"
 PKG_URL="http://ffmpeg.org/releases/ffmpeg-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain zlib bzip2 openssl speex"
 PKG_LONGDESC="FFmpeg is a complete, cross-platform solution to record, convert and stream audio and video."
-PKG_PATCH_DIRS="libreelec v4l2-request v4l2-drmprime"
+PKG_PATCH_DIRS="libreelec v4l2-request v4l2-drmprime rkmpp"
 
 post_unpack() {
   echo "${PKG_VERSION}" > ${PKG_BUILD}/RELEASE
@@ -63,6 +63,14 @@ if [ "${DISPLAYSERVER}" != "x11" ]; then
   PKG_FFMPEG_VAAPI=" --enable-libdrm"
 fi
 
+if [ "${PROJECT}" = "Rockchip" ]; then
+  PKG_DEPENDS_TARGET+=" rkmpp"
+  PKG_NEED_UNPACK+=" $(get_pkg_directory rkmpp)"
+  PKG_FFMPEG_RKMPP="--enable-rkmpp --enable-libdrm"
+else
+  PKG_FFMPEG_RKMPP=""
+fi
+
 if [ "${VDPAU_SUPPORT}" = "yes" -a "${DISPLAYSERVER}" = "x11" ]; then
   PKG_DEPENDS_TARGET+=" libvdpau"
   PKG_NEED_UNPACK+=" $(get_pkg_directory libvdpau)"
@@ -106,7 +114,8 @@ if [ "${FFMPEG_TESTING}" = "yes" ]; then
     PKG_FFMPEG_TESTING+=" --enable-vout-drm --enable-outdev=vout_drm"
   fi
 else
-  PKG_FFMPEG_TESTING="--disable-programs"
+  # Ship ffprobe for on-device media probing; keep ffmpeg/ffplay out to stay lean.
+  PKG_FFMPEG_TESTING="--disable-ffmpeg --disable-ffplay"
 fi
 
 configure_target() {
@@ -161,6 +170,7 @@ configure_target() {
               --disable-crystalhd \
               ${PKG_FFMPEG_V4L2} \
               ${PKG_FFMPEG_VAAPI} \
+              ${PKG_FFMPEG_RKMPP} \
               ${PKG_FFMPEG_VDPAU} \
               ${PKG_FFMPEG_RPI} \
               --enable-runtime-cpudetect \

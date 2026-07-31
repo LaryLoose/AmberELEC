@@ -1,0 +1,54 @@
+RK3326 (and other 32-bit unsigned-long vcodec_service kernels) only accept the
+VPU_IOC_SET_CLIENT_TYPE_U32 ioctl (0x40046c01). MPP probes the plain
+VPU_IOC_SET_CLIENT_TYPE first, which is _IOW('l',1,unsigned long) = 0x40086c01
+on aarch64 and gets rejected by the driver with a noisy kernel log line:
+  rk_vcodec: vpu_service_ioctl: error: unknown vpu service ioctl cmd 40086c01
+Decode still works via the existing fallback, but the rejected probe spams dmesg.
+Try the U32 variant first so the rejected ioctl is never sent on this SoC.
+
+--- a/osal/driver/vcodec_service.c
++++ b/osal/driver/vcodec_service.c
+@@ -536,13 +536,13 @@
+     }
+ 
+     if (vcodec_ioctl_version < 0) {
+-        ret = (RK_S32)ioctl(p->fd, VPU_IOC_SET_CLIENT_TYPE, (unsigned long)client_type);
+-        if (!ret) {
+-            vcodec_ioctl_version = 0;
+-        } else {
+-            ret = (RK_S32)ioctl(p->fd, VPU_IOC_SET_CLIENT_TYPE_U32, (RK_U32)client_type);
+-            if (!ret)
+-                vcodec_ioctl_version = 1;
++        ret = (RK_S32)ioctl(p->fd, VPU_IOC_SET_CLIENT_TYPE_U32, (RK_U32)client_type);
++        if (!ret) {
++            vcodec_ioctl_version = 1;
++        } else {
++            ret = (RK_S32)ioctl(p->fd, VPU_IOC_SET_CLIENT_TYPE, (unsigned long)client_type);
++            if (!ret)
++                vcodec_ioctl_version = 0;
+         }
+         mpp_assert(ret == MPP_OK);
+     } else {
+--- a/mpp/legacy/vpu.c
++++ b/mpp/legacy/vpu.c
+@@ -90,13 +90,13 @@
+         ret = (RK_S32)ioctl(dev, MPP_IOC_CFG_V1, &mpp_req);
+     } else {
+         if (vpu_api_ioctl_version < 0) {
+-            ret = ioctl(dev, VPU_IOC_SET_CLIENT_TYPE, client_type);
+-            if (!ret) {
+-                vpu_api_ioctl_version = 0;
+-            } else {
+-                ret = ioctl(dev, VPU_IOC_SET_CLIENT_TYPE_U32, client_type);
+-                if (!ret)
+-                    vpu_api_ioctl_version = 1;
++            ret = ioctl(dev, VPU_IOC_SET_CLIENT_TYPE_U32, client_type);
++            if (!ret) {
++                vpu_api_ioctl_version = 1;
++            } else {
++                ret = ioctl(dev, VPU_IOC_SET_CLIENT_TYPE, client_type);
++                if (!ret)
++                    vpu_api_ioctl_version = 0;
+             }
+ 
+             if (ret)

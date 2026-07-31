@@ -1,0 +1,20 @@
+mpp_buf_slot ships an alignment self-check that computes the frame buffer size
+twice (legacy vs sys_cfg) and logs "mismatch size_total A - B" whenever the two
+formulas disagree. This is purely diagnostic: MPP actually uses the sys_cfg
+result (use_legacy_align defaults to 0), i.e. the larger, HW-correct size, so
+nothing is undersized or reallocated. The check is enabled by default because
+buf_slot_debug defaults to include BUF_SLOT_DBG_INFO_SET. Drop that bit from the
+default mask so the benign per-slot log stops spamming; it can still be turned
+back on via `buf_slot_debug=0x800`.
+
+--- a/mpp/base/mpp_buf_slot.c
++++ b/mpp/base/mpp_buf_slot.c
+@@ -820,7 +820,7 @@
+     }
+ 
+     mpp_env_get_u32("buf_slot_debug", &buf_slot_debug,
+-                    BUF_SLOT_DBG_OPS_HISTORY | BUF_SLOT_DBG_INFO_SET);
++                    BUF_SLOT_DBG_OPS_HISTORY);
+     mpp_env_get_u32("use_legacy_align", &use_legacy_align, 0);
+ 
+     do {

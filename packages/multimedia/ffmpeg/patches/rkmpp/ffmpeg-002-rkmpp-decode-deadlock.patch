@@ -1,0 +1,25 @@
+--- a/libavcodec/rkmppdec.c
++++ b/libavcodec/rkmppdec.c
+@@ -519,17 +519,17 @@
+             ret = rkmpp_send_packet(avctx, &pkt);
+             av_packet_unref(&pkt);
+ 
+-            if (ret < 0) {
++            // EAGAIN means the MPP input queue is full; that is not fatal.
++            if (ret < 0 && ret != AVERROR(EAGAIN)) {
+                 av_log(avctx, AV_LOG_ERROR, "Failed to send packet to decoder (code = %d)\n", ret);
+                 return ret;
+             }
+         }
+-
+-        // make sure we keep decoder full
+-        if (freeslots > 1)
+-            return AVERROR(EAGAIN);
+     }
+ 
++    // Always drain a decoded frame. Returning EAGAIN here without retrieving
++    // stalls the pipeline where GET_STREAM_COUNT reports free slots but the
++    // hardware never produces output.
+     return rkmpp_retrieve_frame(avctx, frame);
+ }
+ 

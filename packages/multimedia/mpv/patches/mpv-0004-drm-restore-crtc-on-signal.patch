@@ -1,0 +1,79 @@
+--- a/video/out/opengl/context_drm_egl.c
++++ b/video/out/opengl/context_drm_egl.c
+@@ -15,6 +15,7 @@
+  * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#include <signal.h>
+ #include <assert.h>
+ #include <errno.h>
+ #include <fcntl.h>
+@@ -424,6 +425,50 @@
+         MP_ERR(ctx->vo, "Failed to restore previous mode\n");
+ }
+ 
++static struct ra_ctx *drm_egl_signal_ctx;
++
++// Restore the pre-mpv CRTC even when killed (e.g. SIGTERM from a parent that
++// does not wait for our teardown), so the display is never left blanked.
++static void drm_egl_restore_and_die(int sig)
++{
++    struct ra_ctx *ctx = drm_egl_signal_ctx;
++    drm_egl_signal_ctx = NULL;
++    if (ctx) {
++        struct priv *p = ctx->priv;
++        crtc_release(ctx);
++        if (p->kms)
++            drmDropMaster(p->kms->fd);
++    }
++    struct sigaction sa = { .sa_handler = SIG_DFL };
++    sigemptyset(&sa.sa_mask);
++    sigaction(sig, &sa, NULL);
++    raise(sig);
++}
++
++static void drm_egl_install_signal_restore(struct ra_ctx *ctx)
++{
++    drm_egl_signal_ctx = ctx;
++    struct sigaction sa = { .sa_handler = drm_egl_restore_and_die };
++    sigemptyset(&sa.sa_mask);
++    sigaction(SIGTERM, &sa, NULL);
++    sigaction(SIGINT,  &sa, NULL);
++    sigaction(SIGHUP,  &sa, NULL);
++    sigaction(SIGQUIT, &sa, NULL);
++}
++
++static void drm_egl_remove_signal_restore(void)
++{
++    if (!drm_egl_signal_ctx)
++        return;
++    drm_egl_signal_ctx = NULL;
++    struct sigaction sa = { .sa_handler = SIG_DFL };
++    sigemptyset(&sa.sa_mask);
++    sigaction(SIGTERM, &sa, NULL);
++    sigaction(SIGINT,  &sa, NULL);
++    sigaction(SIGHUP,  &sa, NULL);
++    sigaction(SIGQUIT, &sa, NULL);
++}
++
+ static void release_vt(void *data)
+ {
+     struct ra_ctx *ctx = data;
+@@ -630,6 +675,8 @@
+ {
+     struct priv *p = ctx->priv;
+     struct drm_atomic_context *atomic_ctx = p->kms->atomic_context;
++
++    drm_egl_remove_signal_restore();
+ 
+     int ret = drmModeAtomicCommit(p->kms->fd, atomic_ctx->request, 0, NULL);
+     if (ret)
+@@ -852,6 +899,8 @@
+         return false;
+     }
+ 
++    drm_egl_install_signal_restore(ctx);
++
+     p->drm_params.fd = p->kms->fd;
+     p->drm_params.crtc_id = p->kms->crtc_id;
+     p->drm_params.connector_id = p->kms->connector->connector_id;

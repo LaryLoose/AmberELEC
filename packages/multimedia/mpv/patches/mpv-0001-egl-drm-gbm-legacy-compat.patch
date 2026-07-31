@@ -1,0 +1,72 @@
+--- a/video/out/opengl/context_drm_egl.c
++++ b/video/out/opengl/context_drm_egl.c
+@@ -254,22 +254,13 @@
+ 
+     MP_VERBOSE(ctx->vo, "Initializing GBM surface (%d x %d)\n",
+         p->draw_surface_size.width, p->draw_surface_size.height);
+-    if (p->num_gbm_modifiers == 0) {
+-        p->gbm.surface = gbm_surface_create(
+-            p->gbm.device,
+-            p->draw_surface_size.width,
+-            p->draw_surface_size.height,
+-            p->gbm_format,
+-            GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+-    } else {
+-        p->gbm.surface = gbm_surface_create_with_modifiers(
+-            p->gbm.device,
+-            p->draw_surface_size.width,
+-            p->draw_surface_size.height,
+-            p->gbm_format,
+-            p->gbm_modifiers,
+-            p->num_gbm_modifiers);
+-    }
++    /* AmberELEC: libmali GBM lacks modifier APIs; always use the legacy path */
++    p->gbm.surface = gbm_surface_create(
++        p->gbm.device,
++        p->draw_surface_size.width,
++        p->draw_surface_size.height,
++        p->gbm_format,
++        GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+     if (!p->gbm.surface) {
+         MP_ERR(ctx->vo, "Failed to create GBM surface.\n");
+         return false;
+@@ -298,10 +289,10 @@
+     fb->fd     = p->kms->fd;
+     fb->width  = gbm_bo_get_width(bo);
+     fb->height = gbm_bo_get_height(bo);
+-    uint64_t modifier = gbm_bo_get_modifier(bo);
+ 
++    /* AmberELEC: libmali GBM lacks modifier APIs; always use the legacy path */
+     int ret;
+-    if (p->num_gbm_modifiers == 0 || modifier == DRM_FORMAT_MOD_INVALID) {
++    {
+         uint32_t stride = gbm_bo_get_stride(bo);
+         uint32_t handle = gbm_bo_get_handle(bo).u32;
+         ret = drmModeAddFB2(fb->fd, fb->width, fb->height,
+@@ -310,26 +301,6 @@
+                             (uint32_t[4]){stride, 0, 0, 0},
+                             (uint32_t[4]){0, 0, 0, 0},
+                             &fb->id, 0);
+-    } else {
+-        MP_VERBOSE(ctx, "GBM surface using modifier 0x%"PRIX64"\n", modifier);
+-
+-        uint32_t handles[4] = {0};
+-        uint32_t strides[4] = {0};
+-        uint32_t offsets[4] = {0};
+-        uint64_t modifiers[4] = {0};
+-
+-        const int num_planes = gbm_bo_get_plane_count(bo);
+-        for (int i = 0; i < num_planes; ++i) {
+-            handles[i] = gbm_bo_get_handle_for_plane(bo, i).u32;
+-            strides[i] = gbm_bo_get_stride_for_plane(bo, i);
+-            offsets[i] = gbm_bo_get_offset(bo, i);
+-            modifiers[i] = modifier;
+-        }
+-
+-        ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+-                                         p->gbm_format,
+-                                         handles, strides, offsets, modifiers,
+-                                         &fb->id, DRM_MODE_FB_MODIFIERS);
+     }
+     if (ret) {
+         MP_ERR(ctx->vo, "Failed to create framebuffer: %s\n", mp_strerror(errno));

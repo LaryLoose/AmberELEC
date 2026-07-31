@@ -1,0 +1,191 @@
+--- a/video/out/hwdec/dmabuf_interop.h
++++ b/video/out/hwdec/dmabuf_interop.h
+@@ -24,6 +24,7 @@
+ 
+ struct dmabuf_interop {
+     bool use_modifiers;
++    bool use_external_oes;
+ 
+     bool (*interop_init)(struct ra_hwdec_mapper *mapper,
+                          const struct ra_imgfmt_desc *desc);
+@@ -37,6 +38,7 @@
+ 
+ struct dmabuf_interop_priv {
+     int num_planes;
++    bool use_external_oes;
+     struct mp_image layout;
+     struct ra_tex *tex[4];
+ 
+--- a/video/out/hwdec/dmabuf_interop_gl.c
++++ b/video/out/hwdec/dmabuf_interop_gl.c
+@@ -25,6 +25,10 @@
+ typedef void* GLeglImageOES;
+ typedef void *EGLImageKHR;
+ 
++#ifndef GL_TEXTURE_EXTERNAL_OES
++#define GL_TEXTURE_EXTERNAL_OES 0x8D65
++#endif
++
+ // Any EGL_EXT_image_dma_buf_import definitions used in this source file.
+ #define EGL_LINUX_DMA_BUF_EXT             0x3270
+ #define EGL_LINUX_DRM_FOURCC_EXT          0x3271
+@@ -85,6 +89,37 @@
+ 
+     GL *gl = ra_gl_get(mapper->ra);
+     gl->GenTextures(4, p->gl_textures);
++
++    if (p_mapper->use_external_oes) {
++        gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, p->gl_textures[0]);
++        gl->TexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++        gl->TexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++        gl->TexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++        gl->TexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++        gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
++
++        struct ra_tex_params params = {
++            .dimensions = 2,
++            .w = mapper->src_params.w,
++            .h = mapper->src_params.h,
++            .d = 1,
++            .format = ra_find_unorm_format(mapper->ra, 1, 4),
++            .render_src = true,
++            .src_linear = true,
++            .external_oes = true,
++        };
++
++        if (!params.format || params.format->ctype != RA_CTYPE_UNORM)
++            return false;
++
++        p_mapper->tex[0] = ra_create_wrapped_tex(mapper->ra, &params,
++                                                 p->gl_textures[0]);
++        if (!p_mapper->tex[0])
++            return false;
++
++        return true;
++    }
++
+     for (int n = 0; n < desc->num_planes; n++) {
+         gl->BindTexture(GL_TEXTURE_2D, p->gl_textures[n]);
+         gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+@@ -163,6 +198,55 @@
+ 
+     GL *gl = ra_gl_get(mapper->ra);
+ 
++    if (dmabuf_interop->use_external_oes) {
++        // Import the whole surface (all planes of layer 0) as a single EGLImage
++        // and sample it via GL_TEXTURE_EXTERNAL_OES; libmali does YUV->RGB.
++        const AVDRMLayerDescriptor *layer = &p_mapper->desc.layers[0];
++        int attribs[44] = {EGL_NONE};
++        int num_attribs = 0;
++
++        ADD_ATTRIB(EGL_LINUX_DRM_FOURCC_EXT, layer->format);
++        ADD_ATTRIB(EGL_WIDTH, mapper->src_params.w);
++        ADD_ATTRIB(EGL_HEIGHT, mapper->src_params.h);
++        for (int j = 0; j < layer->nb_planes; j++) {
++            int fd = p_mapper->desc.objects[layer->planes[j].object_index].fd;
++            int off = layer->planes[j].offset;
++            int pitch = layer->planes[j].pitch;
++            switch (j) {
++            case 0:
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE0_FD_EXT, fd);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE0_OFFSET_EXT, off);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE0_PITCH_EXT, pitch);
++                break;
++            case 1:
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE1_FD_EXT, fd);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE1_OFFSET_EXT, off);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE1_PITCH_EXT, pitch);
++                break;
++            case 2:
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE2_FD_EXT, fd);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE2_OFFSET_EXT, off);
++                ADD_ATTRIB(EGL_DMA_BUF_PLANE2_PITCH_EXT, pitch);
++                break;
++            }
++        }
++
++        p->images[0] = p->CreateImageKHR(eglGetCurrentDisplay(),
++            EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attribs);
++        if (!p->images[0]) {
++            mp_msg(mapper->log, probing ? MSGL_DEBUG : MSGL_ERR,
++                   "Failed to import surface in EGL: %u\n", eglGetError());
++            return false;
++        }
++
++        gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, p->gl_textures[0]);
++        p->EGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, p->images[0]);
++        gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
++
++        mapper->tex[0] = p_mapper->tex[0];
++        return true;
++    }
++
+     for (int i = 0, n = 0; i < p_mapper->desc.nb_layers; i++) {
+         /*
+          * As we must map surfaces as one texture per plane, we can only support
+@@ -297,7 +381,17 @@
+     dmabuf_interop->use_modifiers =
+         gl_check_extension(exts, "EGL_EXT_image_dma_buf_import_modifiers");
+ 
+-    MP_VERBOSE(hw, "using EGL dmabuf interop\n");
++    // libmali (Rockchip blob) rejects per-plane R8/GR88 dmabuf import, but can
++    // import a whole YUV surface as one GL_TEXTURE_EXTERNAL_OES texture. Unlike
++    // Mesa it advertises no import-modifiers extension; use that to enable the
++    // external-OES path only where the per-plane path would fail.
++    dmabuf_interop->use_external_oes =
++        !dmabuf_interop->use_modifiers &&
++        (gl_check_extension(gl->extensions, "GL_OES_EGL_image_external_essl3") ||
++         gl_check_extension(gl->extensions, "GL_OES_EGL_image_external"));
++
++    MP_VERBOSE(hw, "using EGL dmabuf interop%s\n",
++               dmabuf_interop->use_external_oes ? " (external-OES)" : "");
+ 
+     dmabuf_interop->interop_init = vaapi_gl_mapper_init;
+     dmabuf_interop->interop_uninit = vaapi_gl_mapper_uninit;
+--- a/video/out/hwdec/hwdec_drmprime.c
++++ b/video/out/hwdec/hwdec_drmprime.c
+@@ -170,6 +170,14 @@
+     mapper->dst_params.imgfmt = mapper->src_params.hw_subfmt;
+     mapper->dst_params.hw_subfmt = 0;
+ 
++    // The libmali external-OES interop samples the whole surface as a single
++    // already-converted RGB texture, so advertise RGB with one plane.
++    p->use_external_oes = p_owner->dmabuf_interop.use_external_oes;
++    if (p->use_external_oes) {
++        mapper->dst_params.imgfmt = IMGFMT_RGB0;
++        mapper->dst_params.hw_subfmt = 0;
++    }
++
+     struct ra_imgfmt_desc desc = {0};
+ 
+     if (mapper->ra->num_formats &&
+@@ -183,7 +191,7 @@
+         if (!p_owner->dmabuf_interop.interop_init(mapper, &desc))
+             return -1;
+ 
+-    if (!check_fmt(mapper, mapper->dst_params.imgfmt))
++    if (!p->use_external_oes && !check_fmt(mapper, mapper->dst_params.imgfmt))
+     {
+         MP_FATAL(mapper, "unsupported DRM image format %s\n",
+                  mp_imgfmt_to_name(mapper->dst_params.imgfmt));
+@@ -244,7 +252,7 @@
+         num_returned_planes += p->desc.layers[i].nb_planes;
+     }
+ 
+-    if (p->num_planes != num_returned_planes) {
++    if (!p->use_external_oes && p->num_planes != num_returned_planes) {
+         MP_ERR(mapper,
+                "Mapped surface with format '%s' has unexpected number of planes. "
+                "(%d layers and %d planes, but expected %d planes)\n",
+--- a/video/out/gpu/shader_cache.c
++++ b/video/out/gpu/shader_cache.c
+@@ -321,6 +321,9 @@
+         glsl_type = "sampler2DRect";
+     } else if (tex->params.external_oes) {
+         glsl_type = "samplerExternalOES";
++        gl_sc_enable_extension(sc, sc->ra->glsl_version >= 300 ?
++                               "GL_OES_EGL_image_external_essl3" :
++                               "GL_OES_EGL_image_external");
+     } else if (tex->params.format->ctype == RA_CTYPE_UINT) {
+         glsl_type = sc->ra->glsl_es ? "highp usampler2D" : "usampler2D";
+     }

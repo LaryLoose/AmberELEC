@@ -1,0 +1,47 @@
+ffmpeg's rkmpp decoder configures blocking-with-timeout via the deprecated
+MPP_SET_OUTPUT_BLOCK + MPP_SET_OUTPUT_BLOCK_TIMEOUT pair. On this MPP each call
+logs "deprecated block control, use timeout control instead" (two lines per
+decoder open). The two calls only end up setting mOutputTimeout to
+RECEIVE_FRAME_TIMEOUT (the BLOCK value is immediately overwritten), so a single
+MPP_SET_OUTPUT_TIMEOUT is the exact modern equivalent and silences the spam.
+paramS64 becomes unused afterwards, so drop it. Behaviour is unchanged.
+
+--- a/libavcodec/rkmppdec.c
++++ b/libavcodec/rkmppdec.c
+@@ -155,7 +155,6 @@
+     RKMPPDecoder *decoder = NULL;
+     MppCodingType codectype = MPP_VIDEO_CodingUnused;
+     int ret;
+-    RK_S64 paramS64;
+     RK_S32 paramS32;
+ 
+     avctx->pix_fmt = AV_PIX_FMT_DRM_PRIME;
+@@ -206,22 +205,15 @@
+         ret = AVERROR_UNKNOWN;
+         goto fail;
+     }
+ 
+-    // make decode calls blocking with a timeout
+-    paramS32 = MPP_POLL_BLOCK;
+-    ret = decoder->mpi->control(decoder->ctx, MPP_SET_OUTPUT_BLOCK, &paramS32);
+-    if (ret != MPP_OK) {
+-        av_log(avctx, AV_LOG_ERROR, "Failed to set blocking mode on MPI (code = %d).\n", ret);
+-        ret = AVERROR_UNKNOWN;
+-        goto fail;
+-    }
+-
+-    paramS64 = RECEIVE_FRAME_TIMEOUT;
+-    ret = decoder->mpi->control(decoder->ctx, MPP_SET_OUTPUT_BLOCK_TIMEOUT, &paramS64);
+-    if (ret != MPP_OK) {
+-        av_log(avctx, AV_LOG_ERROR, "Failed to set block timeout on MPI (code = %d).\n", ret);
++    // make decode calls blocking with a timeout (modern timeout API; the old
++    // MPP_SET_OUTPUT_BLOCK[_TIMEOUT] pair is deprecated and spams the log)
++    paramS32 = RECEIVE_FRAME_TIMEOUT;
++    ret = decoder->mpi->control(decoder->ctx, MPP_SET_OUTPUT_TIMEOUT, &paramS32);
++    if (ret != MPP_OK) {
++        av_log(avctx, AV_LOG_ERROR, "Failed to set output timeout on MPI (code = %d).\n", ret);
+         ret = AVERROR_UNKNOWN;
+         goto fail;
+     }
+ 
+     ret = mpp_buffer_group_get_internal(&decoder->frame_group, MPP_BUFFER_TYPE_ION);

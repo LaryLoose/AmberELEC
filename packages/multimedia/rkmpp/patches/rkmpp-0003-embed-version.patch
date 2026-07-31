@@ -1,0 +1,22 @@
+MPP fills its version banner from `git log` only when a .git dir exists in the
+source tree. We build from a release tarball (no .git), so VERSION_INFO stays at
+the default "unknown mpp version for missing VCS info" logged by mpp_info.
+Honor an MPP_VERSION_OVERRIDE env var (set from PKG_VERSION in package.mk) so the
+banner shows the real pinned commit instead. Git builds still win via the .git
+block below. Cosmetic only; no ABI/decode impact.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -195,7 +195,11 @@
+ # ----------------------------------------------------------------------------
+ set(VERSION_CNT         0)
+ set(VERSION_MAX_CNT     9)
+-set(VERSION_INFO        "\"unknown mpp version for missing VCS info\"")
++if(DEFINED ENV{MPP_VERSION_OVERRIDE})
++    set(VERSION_INFO    "\"$ENV{MPP_VERSION_OVERRIDE}\"")
++else()
++    set(VERSION_INFO    "\"unknown mpp version for missing VCS info\"")
++endif()
+ foreach (CNT RANGE ${VERSION_MAX_CNT})
+     set(VERSION_HISTORY_${CNT} "NULL")
+ endforeach(CNT)
