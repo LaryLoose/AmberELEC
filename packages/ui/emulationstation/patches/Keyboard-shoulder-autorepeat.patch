@@ -1,0 +1,192 @@
+diff --git a/es-core/src/components/TextEditComponent.cpp b/es-core/src/components/TextEditComponent.cpp
+index f9749ebfe..fa0ce1523 100644
+--- a/es-core/src/components/TextEditComponent.cpp
++++ b/es-core/src/components/TextEditComponent.cpp
+@@ -10,13 +10,14 @@
+ 
+ #define CURSOR_REPEAT_START_DELAY 500
+ #define CURSOR_REPEAT_SPEED 28 // lower is faster
++#define TEXTINPUT_REPEAT_SPEED (CURSOR_REPEAT_SPEED * 6)
+ 
+ #define BLINKTIME	1000
+ 
+ TextEditComponent::TextEditComponent(Window* window) : GuiComponent(window),
+ 	mBox(window, ":/textinput_ninepatch.png"), mFocused(false), 
+ 	mScrollOffset(0.0f, 0.0f), mCursor(0), mEditing(false), mFont(Font::get(FONT_SIZE_MEDIUM, FONT_PATH_LIGHT)), 
+-	mCursorRepeatDir(0)
++	mCursorRepeatDir(0), mTextInputRepeatTimer(0)
+ {
+ 	mBlinkTime = 0;
+ 	mDeferTextInputStart = false;
+@@ -134,9 +135,26 @@ void TextEditComponent::stopEditing()
+ 	SDL_StopTextInput();
+ 	mEditing = false;
+ 	mDeferTextInputStart = false;
++	stopTextInputRepeat();
+ 	updateHelpPrompts();
+ }
+ 
++void TextEditComponent::startTextInputRepeat(const char* text)
++{
++	if (!mEditing)
++		return;
++
++	mBlinkTime = 0;
++	mTextInputRepeatValue = text;
++	mTextInputRepeatTimer = -(CURSOR_REPEAT_START_DELAY - TEXTINPUT_REPEAT_SPEED);
++	textInput(text);
++}
++
++void TextEditComponent::stopTextInputRepeat()
++{
++	mTextInputRepeatValue.clear();
++}
++
+ bool TextEditComponent::input(InputConfig* config, Input input)
+ {	
+ 	bool const cursor_left = (config->getDeviceId() != DEVICE_KEYBOARD && config->isMappedLike("left", input)) ||
+@@ -248,6 +266,7 @@ void TextEditComponent::update(int deltaTime)
+ 		mBlinkTime = 0;
+ 
+ 	updateCursorRepeat(deltaTime);
++	updateTextInputRepeat(deltaTime);
+ 	GuiComponent::update(deltaTime);
+ }
+ 
+@@ -264,6 +283,21 @@ void TextEditComponent::updateCursorRepeat(int deltaTime)
+ 	}
+ }
+ 
++void TextEditComponent::updateTextInputRepeat(int deltaTime)
++{
++	if (!mEditing || mTextInputRepeatValue.empty())
++		return;
++
++	// Keep cursor visible while text repeat is active (e.g. held shoulder button).
++	mBlinkTime = 0;
++	mTextInputRepeatTimer += deltaTime;
++	while (mTextInputRepeatTimer >= TEXTINPUT_REPEAT_SPEED)
++	{
++		textInput(mTextInputRepeatValue.c_str());
++		mTextInputRepeatTimer -= TEXTINPUT_REPEAT_SPEED;
++	}
++}
++
+ void TextEditComponent::moveCursor(int amt)
+ {
+ 	mCursor = (unsigned int)Utils::String::moveCursor(mText, mCursor, amt);
+@@ -359,7 +393,7 @@ void TextEditComponent::render(const Transform4x4f& parentTrans)
+ 			cursorPos[1] = 0;
+ 		}
+ 
+-		if (!mEditing || mBlinkTime < BLINKTIME / 2 || mCursorRepeatDir != 0)
++		if (!mEditing || mBlinkTime < BLINKTIME / 2 || mCursorRepeatDir != 0 || !mTextInputRepeatValue.empty())
+ 		{
+ 			float cursorHeight = mFont->getHeight() * 0.8f;
+ 
+diff --git a/es-core/src/components/TextEditComponent.h b/es-core/src/components/TextEditComponent.h
+index 1f4e2b226..f2f67727d 100644
+--- a/es-core/src/components/TextEditComponent.h
++++ b/es-core/src/components/TextEditComponent.h
+@@ -36,6 +36,8 @@ public:
+ 
+ 	void startEditing(); 
+ 	void stopEditing(); 
++	void startTextInputRepeat(const char* text);
++	void stopTextInputRepeat();
+ 
+ private:
+ 	bool hasAnyKeyPressed();
+@@ -44,6 +46,7 @@ private:
+ 	void onCursorChanged();
+ 
+ 	void updateCursorRepeat(int deltaTime);
++	void updateTextInputRepeat(int deltaTime);
+ 	void moveCursor(int amt);
+ 
+ 	bool isMultiline();
+@@ -57,6 +60,8 @@ private:
+ 
+ 	int mCursorRepeatTimer;
+ 	int mCursorRepeatDir;
++	int mTextInputRepeatTimer;
++	std::string mTextInputRepeatValue;
+ 
+ 	Vector2f mScrollOffset;
+ 
+diff --git a/es-core/src/guis/GuiTextEditPopupKeyboard.cpp b/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
+index 1589cc812..c6f8b65dc 100644
+--- a/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
++++ b/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
+@@ -337,6 +337,39 @@ bool GuiTextEditPopupKeyboard::input(InputConfig* config, Input input)
+ 	if (GuiComponent::input(config, input))
+ 		return true;
+ 
++	if (config->isMappedTo("leftshoulder", input))
++	{
++		if (input.value == 0)
++		{
++			mText->stopTextInputRepeat();
++			return false;
++		}
++
++		if (!mText->isEditing())
++			mText->startEditing();
++
++		mText->startTextInputRepeat("\b");
++		return true;
++	}
++
++	if (config->isMappedTo("rightshoulder", input))
++	{
++		if (input.value == 0)
++		{
++			mText->stopTextInputRepeat();
++			return false;
++		}
++
++		if (!mText->isEditing())
++			mText->startEditing();
++
++		mText->startTextInputRepeat(" ");
++		return true;
++	}
++
++	if (input.value == 0)
++		return false;
++
+ 	// pressing start
+ 	if (config->isMappedTo("start", input) && input.value)
+ 	{
+@@ -360,31 +393,6 @@ bool GuiTextEditPopupKeyboard::input(InputConfig* config, Input input)
+ 		return true;
+ 	}
+ 
+-	// For deleting a chara (Left Top Button)
+-	if (config->isMappedTo("leftshoulder", input) && input.value) {
+-		bool editing = mText->isEditing();
+-		if (!editing)
+-		mText->startEditing();
+-
+-		mText->textInput("\b");
+-
+-		if (!editing)
+-		mText->stopEditing();
+-	}
+-
+-	// For Adding a space (Right Top Button)
+-	if (config->isMappedTo("rightshoulder", input) && input.value) 
+-	{
+-		bool editing = mText->isEditing();
+-		if (!editing)
+-		mText->startEditing();
+-
+-		mText->textInput(" ");
+-
+-		if (!editing)
+-			mText->stopEditing();
+-	}
+-
+ 	// For Shifting (Y)
+ 	if (config->isMappedTo("y", input) && input.value) 
+ 		shiftKeys();

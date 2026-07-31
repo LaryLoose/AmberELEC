@@ -1,0 +1,41 @@
+diff --git a/es-core/src/guis/GuiTextEditPopupKeyboard.cpp b/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
+index c6f8b65dc..94cc3ebba 100644
+--- a/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
++++ b/es-core/src/guis/GuiTextEditPopupKeyboard.cpp
+@@ -190,6 +190,20 @@ GuiTextEditPopupKeyboard::GuiTextEditPopupKeyboard(Window* window, const std::st
+ 						upperAlted = _U("\uF058");
+ 					}
+ 				}
++				else if (lower == "RESET")
++				{
++					lower = _U("\uF0E2");
++					upper = _U("\uF0E2");
++					lowerAlted = _U("\uF0E2");
++					upperAlted = _U("\uF0E2");
++				}
++				else if (lower == "CANCEL")
++				{
++					lower = _U("\uF00D");
++					upper = _U("\uF00D");
++					lowerAlted = _U("\uF00D");
++					upperAlted = _U("\uF00D");
++				}
+ 				else if (lower == "SPACE")
+ 				{
+ 					lower = " ";
+@@ -496,13 +510,13 @@ std::shared_ptr<ButtonComponent> GuiTextEditPopupKeyboard::makeButton(const std:
+ 			mText->startEditing(); mText->textInput(" "); mText->stopEditing();
+ 			return;
+ 		}
+-		else if (key == _("RESET"))
++		else if (key == _U("\uF0E2"))
+ 		{
+ 			mOkCallback(""); 
+ 			delete this;
+ 			return;
+ 		}
+-		else if (key == _("CANCEL"))
++		else if (key == _U("\uF00D"))
+ 		{
+ 			delete this;
+ 			return;
