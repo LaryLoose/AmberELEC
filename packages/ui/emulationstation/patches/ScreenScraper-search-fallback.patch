@@ -1,0 +1,23 @@
+--- a/es-app/src/scrapers/ScreenScraper.cpp
++++ b/es-app/src/scrapers/ScreenScraper.cpp
+@@ -371,6 +371,20 @@
+ 			return true;
+ 	}
+ 
++	size_t resultCountBefore = results.size();
+ 	processGame(doc, results);
++
++	if (results.size() == resultCountBefore)
++	{
++		Utils::Uri retryUrl(request->getUrl());
++		if (!retryUrl.arguments.get("systemeid").empty())
++		{
++			retryUrl.arguments.remove("systemeid");
++
++			if (mRequestQueue != nullptr)
++				mRequestQueue->push(std::unique_ptr<ScraperRequest>(new ScreenScraperRequest(*mRequestQueue, results, retryUrl.toString(), mFileName)));
++		}
++	}
++
+ 	return true;
+ }
