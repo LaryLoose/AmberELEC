@@ -1,0 +1,54 @@
+--- a/es-app/src/components/ScraperSearchComponent.cpp
++++ b/es-app/src/components/ScraperSearchComponent.cpp
+@@ -236,6 +236,10 @@ void ScraperSearchComponent::search(const ScraperSearchParams& params)
+ 	{
+ 		for (auto scraperName : Scraper::getScraperList())
+ 		{
++			std::string settingKey = "ScrapeEngine" + scraperName;
++			if (!Settings::getInstance()->getBool(settingKey))
++				continue;
++
+ 			auto scraper = Scraper::getScraper(scraperName);
+ 			if (scraper == nullptr || !scraper->isSupportedPlatform(params.system))
+ 				continue;
+@@ -251,6 +255,13 @@ void ScraperSearchComponent::search(const ScraperSearchParams& params)
+ 
+ 	if (mScrapEngines.size() == 0)
+ 	{
++		if (mSearchType == NEVER_AUTO_ACCEPT)
++		{
++			mBlockAccept = false;
++			onSearchDone();
++			return;
++		}
++
+ 		ScraperSearch* ss = new ScraperSearch();
+ 		ss->name = Settings::getInstance()->getString("Scraper");
+ 		ss->params = params;
+--- a/es-app/src/guis/GuiScraperSettings.cpp
++++ b/es-app/src/guis/GuiScraperSettings.cpp
+@@ -14,6 +14,11 @@ GuiScraperSettings::GuiScraperSettings(Window* window) : GuiSettings(window, _(
+ 
+ 	std::string scraper = Scraper::getScraperName(scrap);
+ 
++	addGroup(_("SCRAPE SOURCES (SINGLE GAME)"));
++	for (auto engine : Scraper::getScraperList())
++		addSwitch(engine, "ScrapeEngine" + engine, true);
++
++
+ 	std::string imageSourceName = Settings::getInstance()->getString("ScrapperImageSrc");
+ 	auto imageSource = std::make_shared< OptionListComponent<std::string> >(mWindow, _("IMAGE SOURCE"), false);
+ 
+--- a/es-core/src/Settings.cpp
++++ b/es-core/src/Settings.cpp
+@@ -241,6 +241,11 @@ void Settings::setDefaults()
+ 	mStringMap["ScrapperImageSrc"] = "ss";
+ 	mStringMap["ScrapperThumbSrc"] = "";
+ 	mStringMap["ScrapperLogoSrc"] = "";
++	mBoolMap["ScrapeEngineScreenScraper"] = true;
++	mBoolMap["ScrapeEngineTheGamesDB"] = true;
++	mBoolMap["ScrapeEngineHfsDB"] = true;
++	mBoolMap["ScrapeEngineArcadeDB"] = true;
++
+ 	mBoolMap["ScrapeVideos"] = false;
+ 	mBoolMap["ScrapeShortTitle"] = false;
