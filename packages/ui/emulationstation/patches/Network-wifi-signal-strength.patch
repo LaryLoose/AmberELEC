@@ -1,0 +1,310 @@
+diff --git a/es-core/src/components/ControllerActivityComponent.cpp b/es-core/src/components/ControllerActivityComponent.cpp
+index c3e6a2743..cbb7ab471 100644
+--- a/es-core/src/components/ControllerActivityComponent.cpp
++++ b/es-core/src/components/ControllerActivityComponent.cpp
+@@ -11,11 +11,21 @@
+ #include "watchers/BatteryLevelWatcher.h"
+ #include "watchers/NetworkStateWatcher.h"
+ 
++// Maps a wifi signal strength (-1 = wired/unknown) to an icon level 0..3
++// (0 = dot only, 3 = dot + all arcs), or -1 to keep the plain network icon.
++static int networkSignalToLevel(int strength)
++{
++	if (strength < 0)
++		return -1;
++	int level = strength / 25;
++	return level > 3 ? 3 : level;
++}
++
+ // #define DEVTEST
+ 
+ #define PLAYER_PAD_TIME_MS		 150
+ 
+-ControllerActivityComponent::ControllerActivityComponent(Window* window) : GuiComponent(window), mBatteryInfoChanged(false), mBatteryTextX(0), mNetworkConnected(false), mPlanemodeEnabled(false)
++ControllerActivityComponent::ControllerActivityComponent(Window* window) : GuiComponent(window), mBatteryInfoChanged(false), mBatteryTextX(0), mNetworkConnected(false), mPlanemodeEnabled(false), mSignalStrength(-1), mHasNetworkLevelImages(false)
+ {
+ 	WatchersManager::getInstance()->RegisterNotify(this);
+ 	init();
+@@ -40,6 +50,7 @@ void ControllerActivityComponent::OnWatcherChanged(IWatcher* component)
+ 	{
+ 		mNetworkConnected = networkWatcher->isConnected();
+ 		mPlanemodeEnabled = networkWatcher->isPlaneMode();
++		mSignalStrength = networkWatcher->signalStrength();
+ 	}
+ }
+ 
+@@ -78,6 +89,7 @@ void ControllerActivityComponent::init()
+ 	{
+ 		mNetworkConnected = networkWatcher->isConnected();
+ 		mPlanemodeEnabled = networkWatcher->isPlaneMode();
++		mSignalStrength = networkWatcher->signalStrength();
+ 	}
+ 
+ 	mWatchedBatteryInfo = Utils::Platform::BatteryInformation();
+@@ -362,7 +374,16 @@ void ControllerActivityComponent::render(const Transform4x4f& parentTrans)
+ 		if ((mView & PLANEMODE) && mPlanemodeEnabled && mPlanemodeImage != nullptr)
+ 			x += renderTexture(x, szW, mPlanemodeImage, mColorShift);
+ 		else if ((mView & NETWORK) && mNetworkConnected && mNetworkImage != nullptr)
+-			x += renderTexture(x, szW, mNetworkImage, mColorShift);
++		{
++			std::shared_ptr<TextureResource> netTex = mNetworkImage;
++			if (mHasNetworkLevelImages)
++			{
++				int level = networkSignalToLevel(mSignalStrength);
++				if (level >= 0 && mNetworkLevelImages[level] != nullptr)
++					netTex = mNetworkLevelImages[level];
++			}
++			x += renderTexture(x, szW, netTex, mColorShift);
++		}
+ 	}
+ 
+ 	if ((mView & BATTERY) && mBatteryInfo.hasBattery && mBatteryImage != nullptr && !Settings::getInstance()->getString("ShowBattery").empty())
+@@ -414,10 +435,37 @@ void ControllerActivityComponent::applyTheme(const std::shared_ptr<ThemeData>& t
+ 			if (ResourceManager::getInstance()->fileExists(elem->get<std::string>("networkIcon")))
+ 			{
+ 				mView |= ActivityView::NETWORK;
+-				mNetworkImage = TextureResource::get(elem->get<std::string>("networkIcon"), false, true);
++				std::string base = elem->get<std::string>("networkIcon");
++				mNetworkImage = TextureResource::get(base, false, true);
++
++				// Look for per-signal-level variants "<name>-0..3.<ext>" next to
++				// the base icon; when all four exist the icon reflects signal strength.
++				mHasNetworkLevelImages = false;
++				std::string::size_type dot = base.find_last_of('.');
++				std::string stem = (dot == std::string::npos) ? base : base.substr(0, dot);
++				std::string ext  = (dot == std::string::npos) ? "" : base.substr(dot);
++
++				bool all = true;
++				std::string cand[4];
++				for (int i = 0; i < 4; i++)
++				{
++					cand[i] = stem + "-" + std::to_string(i) + ext;
++					if (!ResourceManager::getInstance()->fileExists(cand[i]))
++						all = false;
++				}
++
++				if (all)
++				{
++					for (int i = 0; i < 4; i++)
++						mNetworkLevelImages[i] = TextureResource::get(cand[i], false, true);
++					mHasNetworkLevelImages = true;
++				}
+ 			}
+ 			else
++			{
+ 				mNetworkImage = nullptr;
++				mHasNetworkLevelImages = false;
++			}
+ 		}
+ 
+ 		// planeMode
+diff --git a/es-core/src/components/ControllerActivityComponent.h b/es-core/src/components/ControllerActivityComponent.h
+index 504a242b6..ab38cfba4 100644
+--- a/es-core/src/components/ControllerActivityComponent.h
++++ b/es-core/src/components/ControllerActivityComponent.h
+@@ -107,6 +107,9 @@ protected:
+     std::shared_ptr<TextureResource> mPlanemodeImage;
+ 	bool mNetworkConnected;
+   	bool mPlanemodeEnabled;
++	int mSignalStrength; // wifi signal 0..100, -1 = wired/unknown
++	bool mHasNetworkLevelImages;
++	std::shared_ptr<TextureResource> mNetworkLevelImages[4];
+ 
+ protected:
+ 	// Battery info
+diff --git a/es-core/src/components/NetworkIconComponent.cpp b/es-core/src/components/NetworkIconComponent.cpp
+index 0bb941460..d437000b1 100644
+--- a/es-core/src/components/NetworkIconComponent.cpp
++++ b/es-core/src/components/NetworkIconComponent.cpp
+@@ -5,7 +5,17 @@
+ 
+ #include "watchers/NetworkStateWatcher.h"
+ 
+-NetworkIconComponent::NetworkIconComponent(Window* window) : ImageComponent(window), mConnected(false), mPlaneMode(false), mDirty(true)
++// Maps a wifi signal strength (-1 = wired/unknown) to an icon level 0..3
++// (0 = dot only, 3 = dot + all arcs), or -1 to keep the plain network icon.
++static int signalToLevel(int strength)
++{
++	if (strength < 0)
++		return -1;
++	int level = strength / 25;
++	return level > 3 ? 3 : level;
++}
++
++NetworkIconComponent::NetworkIconComponent(Window* window) : ImageComponent(window), mConnected(false), mPlaneMode(false), mDirty(true), mSignalStrength(-1), mHasLevelIcons(false)
+ {	
+ 	setVisible(false);
+ 
+@@ -16,6 +26,7 @@ NetworkIconComponent::NetworkIconComponent(Window* window) : ImageComponent(wind
+ 	{
+ 		mConnected = watcher->isConnected();
+ 		mPlaneMode = watcher->isPlaneMode();
++		mSignalStrength = watcher->signalStrength();
+ 	}
+ }
+ 
+@@ -31,6 +42,7 @@ void NetworkIconComponent::OnWatcherChanged(IWatcher* component)
+ 	{
+ 		mConnected = watcher->isConnected();
+ 		mPlaneMode = watcher->isPlaneMode();
++		mSignalStrength = watcher->signalStrength();
+ 		mDirty = true;
+ 	}	
+ }
+@@ -52,6 +64,12 @@ void NetworkIconComponent::update(int deltaTime)
+ 
+ 			if (planemodeEnabled && !mPlanemodeIcon.empty())
+ 				txName = mPlanemodeIcon;
++			else if (mHasLevelIcons)
++			{
++				int level = signalToLevel(mSignalStrength);
++				if (level >= 0)
++					txName = mLevelIcons[level];
++			}
+ 
+ 			setImage(txName);
+ 		}
+@@ -75,5 +93,31 @@ void NetworkIconComponent::applyTheme(const std::shared_ptr<ThemeData>& theme, c
+ 
+ 	if (elem->has("planemodeIcon") && ResourceManager::getInstance()->fileExists(elem->get<std::string>("planemodeIcon")))
+ 		mPlanemodeIcon = elem->get<std::string>("planemodeIcon");
++
++	// Look for per-signal-level variants "<name>-0..3.<ext>" next to the base
++	// icon; when all four exist the icon reflects the wifi signal strength.
++	mHasLevelIcons = false;
++	if (!mNetworkIcon.empty())
++	{
++		std::string::size_type dot = mNetworkIcon.find_last_of('.');
++		std::string stem = (dot == std::string::npos) ? mNetworkIcon : mNetworkIcon.substr(0, dot);
++		std::string ext  = (dot == std::string::npos) ? "" : mNetworkIcon.substr(dot);
++
++		bool all = true;
++		std::string candidates[4];
++		for (int i = 0; i < 4; i++)
++		{
++			candidates[i] = stem + "-" + std::to_string(i) + ext;
++			if (!ResourceManager::getInstance()->fileExists(candidates[i]))
++				all = false;
++		}
++
++		if (all)
++		{
++			for (int i = 0; i < 4; i++)
++				mLevelIcons[i] = candidates[i];
++			mHasLevelIcons = true;
++		}
++	}
+ }
+ 
+diff --git a/es-core/src/components/NetworkIconComponent.h b/es-core/src/components/NetworkIconComponent.h
+index 41c1383f7..a9956ffb0 100644
+--- a/es-core/src/components/NetworkIconComponent.h
++++ b/es-core/src/components/NetworkIconComponent.h
+@@ -26,9 +26,12 @@ private:
+ 	bool mConnected;
+ 	bool mPlaneMode;
+ 	bool mDirty;
++	int  mSignalStrength;
++	bool mHasLevelIcons;
+ 	
+ 	std::string mNetworkIcon;
+ 	std::string mPlanemodeIcon;
++	std::string mLevelIcons[4];
+ };
+ 
+ #endif // ES_CORE_COMPONENTS_NETWORK_COMPONENT_H
+diff --git a/es-core/src/watchers/NetworkStateWatcher.cpp b/es-core/src/watchers/NetworkStateWatcher.cpp
+index 3b651f4c2..d5111cbf4 100644
+--- a/es-core/src/watchers/NetworkStateWatcher.cpp
++++ b/es-core/src/watchers/NetworkStateWatcher.cpp
+@@ -2,20 +2,64 @@
+ #include "components/IExternalActivity.h"
+ #include "utils/Platform.h"
+ 
+-NetworkStateWatcher::NetworkStateWatcher() : mIsConnected(false), mIsPlaneMode(false)
++#include <fstream>
++#include <sstream>
++
++NetworkStateWatcher::NetworkStateWatcher() : mIsConnected(false), mIsPlaneMode(false), mSignalStrength(-1)
+ {
+ 	mIsPlaneModeSupported = IExternalActivity::Instance != nullptr && IExternalActivity::Instance->isReadPlaneModeSupported();
+ }
+ 
++// Reads the wireless link quality reported by the driver in /proc/net/wireless
++// and returns it as a percentage (0..100), or -1 when no wireless link exists.
++int NetworkStateWatcher::readSignalStrength()
++{
++	std::ifstream file("/proc/net/wireless");
++	if (!file.is_open())
++		return -1;
++
++	std::string line;
++	std::getline(file, line); // header line 1
++	std::getline(file, line); // header line 2
++
++	while (std::getline(file, line))
++	{
++		std::string::size_type colon = line.find(':');
++		if (colon == std::string::npos)
++			continue;
++
++		std::istringstream stream(line.substr(colon + 1));
++		int status = 0;
++		float link = 0.0f;
++		if (!(stream >> status >> link))
++			continue;
++
++		// The "link" column is a quality value, conventionally out of 70.
++		int percent = (int)((link / 70.0f) * 100.0f + 0.5f);
++		if (percent < 0) percent = 0;
++		if (percent > 100) percent = 100;
++		return percent;
++	}
++
++	return -1;
++}
++
+ bool NetworkStateWatcher::check()
+ {
+ 	bool networkConnected = !Utils::Platform::queryIPAddress().empty();
+ 	bool planemodeEnabled = mIsPlaneModeSupported && IExternalActivity::Instance != nullptr && IExternalActivity::Instance->isPlaneMode();
+ 
+-	bool changed = networkConnected != mIsConnected || mIsPlaneMode != planemodeEnabled;
++	int signal = networkConnected ? readSignalStrength() : -1;
++
++	// Bucket the strength into levels so minor fluctuations don't force a redraw.
++	auto level = [](int s) { return s < 0 ? -1 : s / 25; };
++	bool signalChanged = level(signal) != level(mSignalStrength);
++
++	bool changed = networkConnected != mIsConnected || mIsPlaneMode != planemodeEnabled || signalChanged;
+ 
+ 	mIsConnected = networkConnected;
+ 	mIsPlaneMode = planemodeEnabled;
++	mSignalStrength = signal;
+ 	
+ 	return changed;
+ }
+diff --git a/es-core/src/watchers/NetworkStateWatcher.h b/es-core/src/watchers/NetworkStateWatcher.h
+index 79f280069..a6aa25ab6 100644
+--- a/es-core/src/watchers/NetworkStateWatcher.h
++++ b/es-core/src/watchers/NetworkStateWatcher.h
+@@ -9,6 +9,8 @@ public:
+ 
+ 	bool isConnected() { return mIsConnected; }
+ 	bool isPlaneMode() { return mIsPlaneMode; }
++	// -1 when there is no wireless link (wired/unknown), otherwise 0..100 percent.
++	int  signalStrength() { return mSignalStrength; }
+ 
+ protected:
+ 	bool enabled() override { return true; };
+@@ -19,7 +21,10 @@ protected:
+ 	bool check() override;
+ 
+ private:
++	static int readSignalStrength();
++
+ 	bool mIsConnected;
+ 	bool mIsPlaneMode;
+ 	bool mIsPlaneModeSupported;
++	int  mSignalStrength;
+ };
