@@ -1,0 +1,69 @@
+From: AmberELEC battery capacity fix
+Subject: [PATCH] rk817_battery: fix charging capacity + expose coulomb SoC
+
+On the RG351MP the reported capacity is derived purely from the battery
+terminal voltage. While charging the terminal voltage is inflated by the
+charge current across the internal resistance plus the CV phase, so the raw
+reading crosses the "full" threshold almost immediately and capacity snaps
+to 100%. On unplug it drops back to the real value.
+
+1) Subtract a measured fixed offset (182 mV) from the voltage while charging.
+2) Move the 0% point (RG351_BAT_MIN_VOLTAGE) to 3400 mV so it lines up with
+   the power_off_thresd shutdown voltage set in the device tree.
+3) Expose the still-maintained coulomb-counter SoC (dsoc) in parallel as
+   read-only sysfs attribute
+   /sys/class/power_supply/battery/capacity_coulomb.
+---
+--- a/drivers/power/rk817_battery.c
++++ b/drivers/power/rk817_battery.c
+@@ -2022,9 +2022,15 @@
+ //static int rg351p_battery_skip = 30000;
+ static int rg351p_battery_pre_voltage = 5000;
+ #define RG351_BAT_MAX_VOLTAGE 3900
+-#define RG351_BAT_MIN_VOLTAGE 3300
++/* 0% an power_off_thresd (DT) ausgerichtet; (MAX-MIN) muss durch 100 teilbar sein */
++#define RG351_BAT_MIN_VOLTAGE 3400
++/* mV: IR-Drop + CV-Anhebung der Klemmenspannung beim Laden (gemessen RG351MP) */
++#define RG351_BAT_CHARGE_OFFSET 182
+ static int rk817_battery_rg351p_capacity_get(int voltage,int charge_status)
+ {
++	if(charge_status){
++		voltage -= RG351_BAT_CHARGE_OFFSET;
++	}
+ 	if(rg351p_battery_pre_voltage>=5000){
+ 		rg351p_battery_pre_voltage = RG351_BAT_MAX_VOLTAGE;
+ 	}
+@@ -2122,9 +2128,21 @@
+ 	.get_property	= rk817_battery_get_property,
+ };
+ 
++/* Coulomb-counter based SoC, kept in parallel to the voltage based capacity */
++static ssize_t capacity_coulomb_show(struct device *dev,
++				     struct device_attribute *attr, char *buf)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct rk817_battery_device *battery = power_supply_get_drvdata(psy);
++
++	return sprintf(buf, "%d\n", (battery->dsoc + 500) / 1000);
++}
++static DEVICE_ATTR_RO(capacity_coulomb);
++
+ static int rk817_bat_init_power_supply(struct rk817_battery_device *battery)
+ {
+ 	struct power_supply_config psy_cfg = { .drv_data = battery, };
++	int ret;
+ 
+ 	battery->bat = devm_power_supply_register(battery->dev,
+ 						  &rk817_bat_desc,
+@@ -2134,6 +2152,11 @@
+ 		return PTR_ERR(battery->bat);
+ 	}
+ 
++	ret = device_create_file(&battery->bat->dev,
++				 &dev_attr_capacity_coulomb);
++	if (ret)
++		dev_err(battery->dev, "create capacity_coulomb attr failed\n");
++
+ 	return 0;
+ }
+ 

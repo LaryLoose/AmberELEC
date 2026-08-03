@@ -1,0 +1,51 @@
+From: AmberELEC battery longevity
+Subject: [PATCH] rk3326-rg351mp: gentler battery charge/discharge thresholds
+
+Reduce wear on the single-cell LiPo:
+- Charge termination voltage 4200 -> 4100 mV (~90% capacity, roughly doubles
+  cycle life; 4100 mV is the lowest the RK817 CV stage supports).
+- Power-off / discharge cutoff 3000 -> 3400 mV to keep a reserve and avoid
+  deep discharge (also aligns with the capacity 0% point in the fuel gauge).
+
+Applied to both the default and the timing_fix device tree of the RG351MP.
+---
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
+@@ -1255,7 +1255,7 @@
+ 			sleep_enter_current = <300>;
+ 			sleep_exit_current = <300>;
+ 			sleep_filter_current = <100>;
+-			power_off_thresd = <3000>;
++			power_off_thresd = <3400>;
+ 			zero_algorithm_vol = <3850>;
+ 			max_soc_offset = <60>;
+ 			monitor_sec = <5>;
+@@ -1269,7 +1269,7 @@
+ 			min_input_voltage = <4500>;
+ 			max_input_current = <1500>;
+ 			max_chrg_current = <2000>;
+-			max_chrg_voltage = <4200>;
++			max_chrg_voltage = <4100>;
+ 			chrg_term_mode = <0>;
+ 			chrg_finish_cur = <52>;
+ 			virtual_power = <0>;
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
+@@ -1255,7 +1255,7 @@
+ 			sleep_enter_current = <300>;
+ 			sleep_exit_current = <300>;
+ 			sleep_filter_current = <100>;
+-			power_off_thresd = <3000>;
++			power_off_thresd = <3400>;
+ 			zero_algorithm_vol = <3850>;
+ 			max_soc_offset = <60>;
+ 			monitor_sec = <5>;
+@@ -1269,7 +1269,7 @@
+ 			min_input_voltage = <4500>;
+ 			max_input_current = <1500>;
+ 			max_chrg_current = <2000>;
+-			max_chrg_voltage = <4200>;
++			max_chrg_voltage = <4100>;
+ 			chrg_term_mode = <0>;
+ 			chrg_finish_cur = <52>;
+ 			virtual_power = <0>;

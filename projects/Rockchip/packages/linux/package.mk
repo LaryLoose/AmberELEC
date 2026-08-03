@@ -22,6 +22,10 @@ PKG_LONGDESC="This package contains the kernel for the RG351P/M/V/MP and RG552"
 PKG_IS_KERNEL_PKG="yes"
 PKG_STAMP="${KERNEL_TARGET} ${KERNEL_MAKE_EXTRACMD}"
 
+if [[ "${DEVICE}" == RG351MP ]]; then
+  PKG_PATCH_DIRS="${DEVICE}"
+fi
+
 if [[ "${DEVICE}" == RG351V ]]; then
   PKG_PATCH_DIRS="${DEVICE}"
 fi
