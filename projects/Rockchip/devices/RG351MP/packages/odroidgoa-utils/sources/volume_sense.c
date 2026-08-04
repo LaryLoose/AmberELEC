@@ -13,6 +13,7 @@
 #define RG351_DEVICE "/dev/input/by-path/platform-rg351-keys-event"
 #define RG351_CONTROLLER_DEVICE "/dev/input/event2"
 #define BRIGHTNESS_PATH "/sys/class/backlight/backlight/brightness"
+#define VOLUME_STATE_PATH "/run/volume_sense.volume"
 #define GET_EE_SETTING_CMD "sh -c '. /etc/profile 2>/dev/null; get_ee_setting \"%s\"'"
 #define SET_EE_SETTING_CMD "sh -c '. /etc/profile 2>/dev/null; set_ee_setting \"%s\" \"%s\"'"
 #define WRITE_WAIT_MS 5000
@@ -132,6 +133,23 @@ static int set_volume_to_percent(int percent) {
     return snd_mixer_selem_set_playback_volume_all(mixer_elem, vol) < 0 ? -1 : 0;
 }
 
+static void publish_volume(int percent) {
+    percent = CLAMP(percent, 0, 100);
+
+    char buf[5];
+    int len = snprintf(buf, sizeof(buf), "%d\n", percent);
+    if (len <= 0) return;
+
+    int fd = open(VOLUME_STATE_PATH ".tmp", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    if (write(fd, buf, len) == len) {
+        close(fd);
+        rename(VOLUME_STATE_PATH ".tmp", VOLUME_STATE_PATH);
+    } else {
+        close(fd);
+    }
+}
+
 static void persist_volume(int percent) {
     if ((unsigned)percent <= 100) {
         char buf[5];
@@ -180,6 +198,7 @@ static void sync_volume_setting(void) {
             persist_volume(current);
         }
     }
+    if (current_volume_percent >= 0) publish_volume(current_volume_percent);
 }
 
 static void sync_brightness_setting(void) {
@@ -217,6 +236,7 @@ static void set_volume(int direction, int amount) {
     int new_percent = CLAMP(current + direction * amount, 0, 100);
     if (set_volume_to_percent(new_percent) == 0) {
         current_volume_percent = new_percent;
+        publish_volume(new_percent);
         pending_volume_percent = new_percent;
         last_volume_change = get_monotonic_time_msec();
         volume_dirty = 1;
