@@ -1,0 +1,228 @@
+--- a/engines/mtropolis/actions.h
++++ b/engines/mtropolis/actions.h
+@@ -37,6 +37,8 @@
+ 	kNavForward,
+ 	kNavLookUp,
+ 	kNavLookDown,
++
++	kShowZoneOverlay,
+ };
+ 
+ enum MouseButton {
+--- a/engines/mtropolis/runtime.h
++++ b/engines/mtropolis/runtime.h
+@@ -1665,6 +1665,8 @@
+ 
+ 	// Finds the interactive zone whose cursor modifier applies targetCursorID and synthesizes a click at its center.
+ 	bool triggerNavigationCursor(uint32 targetCursorID);
++	// Enables the interactive-zone overlay while the mapped key is held.
++	void setShowZoneOverlay(bool v) { _showZoneOverlay = v; }
+ 	void forceCursorRefreshOnce();
+ 	void setAutoResetCursor(bool enabled);
+ 
+@@ -1994,6 +1996,7 @@
+ 	bool _trackedMouseOutside;
+ 	bool _forceCursorRefreshOnce;
+ 	bool _autoResetCursor;
++	bool _showZoneOverlay = false;
+ 
+ 	uint32 _modifierOverrideCursorID;
+ 	bool _haveModifierOverrideCursor;
+--- a/engines/mtropolis/runtime.cpp
++++ b/engines/mtropolis/runtime.cpp
+@@ -4994,6 +4994,108 @@
+ 	}
+ };
+ 
++static bool mtropolisFindModifierCursor(const Common::Array<Common::SharedPtr<Modifier> > &modifiers, uint32 &outID);
++
++// Builds (once per cursor ID) a small ARGB surface holding a 40%-opaque white backdrop
++// with the cursor composited on top, so the held overlay only needs a light alpha blit.
++static Graphics::Surface *mtropolisGetOverlayCursor(uint32 cid, Graphics::Cursor *cur) {
++	static Common::HashMap<uint32, Graphics::Surface *> s_cache;
++	Common::HashMap<uint32, Graphics::Surface *>::iterator it = s_cache.find(cid);
++	if (it != s_cache.end())
++		return it->_value;
++
++	Graphics::Surface *out = nullptr;
++	if (cur) {
++		const int cw = cur->getWidth();
++		const int ch = cur->getHeight();
++		const byte *px = cur->getSurface();
++		const byte *mask = cur->getMask();
++		const byte key = cur->getKeyColor();
++		const byte *pal = cur->getPalette();
++		const byte palStart = cur->getPaletteStartIndex();
++		const uint palCount = cur->getPaletteCount();
++
++		// Bounding box of opaque pixels: centers the visible glyph and skips empty cursors.
++		int minX = cw, minY = ch, maxX = -1, maxY = -1;
++		for (int yy = 0; yy < ch; yy++) {
++			for (int xx = 0; xx < cw; xx++) {
++				const int idx = px[yy * cw + xx];
++				const bool opaque = mask ? (mask[yy * cw + xx] != 0) : (static_cast<byte>(idx) != key);
++				if (!opaque)
++					continue;
++				if (xx < minX) minX = xx;
++				if (xx > maxX) maxX = xx;
++				if (yy < minY) minY = yy;
++				if (yy > maxY) maxY = yy;
++			}
++		}
++
++		if (maxX >= minX && maxY >= minY) {
++			const int margin = 8;
++			const int w = (maxX - minX + 1) + margin * 2;
++			const int h = (maxY - minY + 1) + margin * 2;
++			const Graphics::PixelFormat argb(4, 8, 8, 8, 8, 16, 8, 0, 24);
++			out = new Graphics::Surface();
++			out->create(w, h, argb);
++			out->fillRect(Common::Rect(0, 0, w, h), argb.ARGBToColor(190, 255, 255, 255));
++			for (int yy = minY; yy <= maxY; yy++) {
++				for (int xx = minX; xx <= maxX; xx++) {
++					const int idx = px[yy * cw + xx];
++					const bool opaque = mask ? (mask[yy * cw + xx] != 0) : (static_cast<byte>(idx) != key);
++					if (!opaque)
++						continue;
++					const uint pi = static_cast<uint>(idx - palStart);
++					if (pi >= palCount)
++						continue;
++					*static_cast<uint32 *>(out->getBasePtr(margin + (xx - minX), margin + (yy - minY))) = argb.ARGBToColor(255, pal[pi * 3 + 0], pal[pi * 3 + 1], pal[pi * 3 + 2]);
++				}
++			}
++		}
++	}
++	s_cache[cid] = out;
++	return out;
++}
++
++static void mtropolisBlitOverlayCursor(Graphics::Surface *screen, const Graphics::PixelFormat &fmt, Graphics::Surface *ov, int cxScreen, int cyScreen) {
++	if (!ov)
++		return;
++	const int w = ov->w;
++	const int h = ov->h;
++	const int left = cxScreen - w / 2;
++	const int top = cyScreen - h / 2;
++	for (int yy = 0; yy < h; yy++) {
++		const int sy = top + yy;
++		if (sy < 0 || sy >= screen->h)
++			continue;
++		const uint32 *srcRow = static_cast<const uint32 *>(ov->getBasePtr(0, yy));
++		for (int xx = 0; xx < w; xx++) {
++			const int sx = left + xx;
++			if (sx < 0 || sx >= screen->w)
++				continue;
++			uint8 a, r, g, b;
++			ov->format.colorToARGB(srcRow[xx], a, r, g, b);
++			if (a == 0)
++				continue;
++			byte *p = static_cast<byte *>(screen->getBasePtr(sx, sy));
++			uint32 dc = (fmt.bytesPerPixel == 2) ? *reinterpret_cast<uint16 *>(p) : *reinterpret_cast<uint32 *>(p);
++			uint8 dr, dg, db;
++			fmt.colorToRGB(dc, dr, dg, db);
++			if (a == 255) {
++				dr = r; dg = g; db = b;
++			} else {
++				dr = static_cast<uint8>((dr * (255 - a) + r * a) / 255);
++				dg = static_cast<uint8>((dg * (255 - a) + g * a) / 255);
++				db = static_cast<uint8>((db * (255 - a) + b * a) / 255);
++			}
++			const uint32 nc = fmt.RGBToColor(dr, dg, db);
++			if (fmt.bytesPerPixel == 2)
++				*reinterpret_cast<uint16 *>(p) = static_cast<uint16>(nc);
++			else
++				*reinterpret_cast<uint32 *>(p) = nc;
++		}
++	}
++}
++
+ void Runtime::drawFrame() {
+ 	int width = _system->getWidth();
+ 	int height = _system->getHeight();
+@@ -5090,6 +5192,54 @@
+ 		_system->copyRectToScreen(surface.getBasePtr(srcLeft, srcTop), surface.pitch, destLeft, destTop, destRight - destLeft, destBottom - destTop);
+ 	}
+ 
++	// Debug overlay: while held, draw each visible interactive zone's own cursor centered so its direction is visible.
++	if (_showZoneOverlay) {
++		Common::SharedPtr<Window> overlayWindow = _mainWindow.lock();
++		if (overlayWindow) {
++			const int32 winW = overlayWindow->getWidth();
++			const int32 winH = overlayWindow->getHeight();
++			const int32 ox = overlayWindow->getX();
++			const int32 oy = overlayWindow->getY();
++
++			Common::Array<ColliderInfo> overlayColliders;
++			for (size_t i = 0; i < _sceneStack.size(); i++) {
++				Structural *scene = _sceneStack[i].scene.get();
++				if (scene)
++					recursiveFindColliders(scene, i, overlayColliders, 0, 0, true);
++			}
++
++			Graphics::Surface *screen = _system->lockScreen();
++			if (screen) {
++				const Graphics::PixelFormat fmt = screen->format;
++				if (fmt.bytesPerPixel == 2 || fmt.bytesPerPixel == 4) {
++					for (uint i = 0; i < overlayColliders.size(); i++) {
++						const ColliderInfo &ci = overlayColliders[i];
++						if (!isStructuralMouseInteractive(ci.element, kMouseInteractivityTestAnything))
++							continue;
++						int32 zcx = ci.absRect.left + ci.absRect.width() / 2;
++						int32 zcy = ci.absRect.top + ci.absRect.height() / 2;
++						if (zcx < 0 || zcx >= winW || zcy < 0 || zcy >= winH)
++							continue;
++
++						// Draw the zone's own cursor centered so its direction is visible.
++						uint32 cid = 0;
++						if (_project && mtropolisFindModifierCursor(ci.element->getModifiers(), cid)) {
++							Common::SharedPtr<CursorGraphicCollection> cgc = _project->getCursorGraphics();
++							if (cgc) {
++								Common::SharedPtr<CursorGraphic> cg = cgc->getGraphicByID(cid);
++								Graphics::Cursor *cur = cg ? cg->getCursor() : nullptr;
++								Graphics::Surface *ov = mtropolisGetOverlayCursor(cid, cur);
++								if (ov)
++									mtropolisBlitOverlayCursor(screen, fmt, ov, zcx + ox, zcy + oy);
++							}
++						}
++					}
++				}
++				_system->unlockScreen();
++			}
++		}
++	}
++
+ 	_system->updateScreen();
+ 
+ 	Common::SharedPtr<CursorGraphic> cursor;
+--- a/engines/mtropolis/metaengine.cpp
++++ b/engines/mtropolis/metaengine.cpp
+@@ -185,6 +185,10 @@
+ 	act->setCustomEngineActionEvent(MTropolis::Actions::kDebugSkipMovies);
+ 	keymap->addAction(act);
+ 
++	act = new Common::Action("SHOW_ZONES", _("Show interactive zones (hold)"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kShowZoneOverlay);
++	keymap->addAction(act);
++
+ 	act = new Common::Action("NAV_TURN_LEFT", _("Navigate: turn left"));
+ 	act->setCustomEngineActionEvent(MTropolis::Actions::kNavTurnLeft);
+ 	act->addDefaultInputMapping("JOY_LEFT");
+--- a/engines/mtropolis/mtropolis.cpp
++++ b/engines/mtropolis/mtropolis.cpp
+@@ -95,8 +95,14 @@
+ 			_runtime->onKeyboardEvent(evt.type, evt.kbdRepeat, evt.kbd);
+ 			break;
+ 		case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
+-			_runtime->onAction(static_cast<MTropolis::Actions::Action>(evt.customType));
+-			break;
++				if (static_cast<MTropolis::Actions::Action>(evt.customType) == MTropolis::Actions::kShowZoneOverlay)
++					_runtime->setShowZoneOverlay(true);
++				else
++					_runtime->onAction(static_cast<MTropolis::Actions::Action>(evt.customType));
++				break;
++			case Common::EVENT_CUSTOM_ENGINE_ACTION_END:
++				if (static_cast<MTropolis::Actions::Action>(evt.customType) == MTropolis::Actions::kShowZoneOverlay)
++					_runtime->setShowZoneOverlay(false);
+ 
+ 		default:
+ 			break;
