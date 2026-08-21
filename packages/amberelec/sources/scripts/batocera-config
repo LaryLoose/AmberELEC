@@ -29,7 +29,7 @@ bato_config_set_value () {
 	key=$1
 	value=$2
 	[ -z "$value" ] && value=0
-	cat "$configFile" | grep "$key"
+	grep "$key" "$configFile"
         valPresent=$?
 	if [ "$valPresent" != "0" ];then
 		echo "$key=$value" >> "$configFile"

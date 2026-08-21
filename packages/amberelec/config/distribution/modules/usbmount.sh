@@ -3,15 +3,15 @@
 SUCCESS=""
 ERROR=""
 
-[ "$(cat /proc/mounts | grep '/dev/sd[a-z]')" ];
+[ "$(grep '/dev/sd[a-z]' /proc/mounts)" ];
 
 if [[ "$?" -eq 0 ]];
 then
-	PARTITIONS=($(cat /proc/mounts | grep '/dev/sd[a-z]' | cut -d  ' ' -f1 | sed 's/\/dev\///g'))
+	PARTITIONS=($(grep '/dev/sd[a-z]' /proc/mounts | cut -d ' ' -f1 | sed 's/\/dev\///g'))
 
 	for e in "${PARTITIONS[@]}";
 	do
-		if [ "$(cat /proc/mounts | grep /dev/${e})" ];
+		if [ "$(grep /dev/${e} /proc/mounts)" ];
 		then
 			echo "trying to unmount partition ${e}..." > /dev/console
 			umount /dev/${e}

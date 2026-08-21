@@ -27,7 +27,7 @@ if [[ -f "${LAST_UPDATE_FILE}" ]]; then
   # Release: 20211122
   # Release - patch: 20211122-1
   PATTERN='.*([0-9]{8}).*'
-  LAST_UPDATE_VERSION="$(cat "$LAST_UPDATE_FILE" | grep -E "$PATTERN" | sed -E "s|$PATTERN|\1|g" )"
+  LAST_UPDATE_VERSION="$(sed -nE "s|$PATTERN|\1|p" "$LAST_UPDATE_FILE")"
 
   # If we cannot parse last update version - set to large date that will never execute - this prevents dev versions causing strangeness
   if [[ -z "${LAST_UPDATE_VERSION}" ]]; then

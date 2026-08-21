@@ -122,35 +122,6 @@ function ee_backup() {
         esac
 }
 
-function setemu(){
-## workaround for ES performance with big conf files
-## This is no longer in use!
-
-EE_CONF="/storage/.config/distribution/configs/emuoptions.conf"
-[ ! -f "${EE_CONF}" ] && touch "${EE_CONF}"
-
-	case "$1" in
-	"set")
-		PAT=$(echo "${2}" | sed -e 's|\"|\\"|g' | sed -e 's|\[|\\\[|g' | sed -e 's|\]|\\\]|g')
-		sed -i "/^$PAT/d" "${EE_CONF}"
-		S2="${2}"
-		S3="${3}"
-		shift 2
-		if [ "${S3}" != "auto" ]; then
-			[ "${S3}" == "disable" ] && echo "#${S2}=" >> "${EE_CONF}" || echo "${S2}=${@}" >> "${EE_CONF}"
-		fi
-		;;
-	"get")
-		PAT=$(echo ${2} | sed -e 's|\"|\\"|g' | sed -e 's|\[|\\\[|g' | sed -e 's|\]|\\\]|g' | sed -e 's|(|\\\(|g' | sed -e 's|)|\\\)|g')
-		PAT="^${PAT}=(.*)"
-		EES=$(cat "${EE_CONF}" | grep -oE "${PAT}")
-		echo "${EES##*=}"
-		;;
-	*)
-	echo "usage: emuelec-utils setemu [set get] value"
-	esac
-}
-
 function getshaders() {
 	find /tmp/shaders -name '*.glslp' -print0 |
 		while IFS= read -r -d '' line; do
@@ -163,21 +134,6 @@ function getfilters() {
 			while IFS= read -r -d '' line; do
 			echo ${line#/usr/share/retroarch/filters/video/},
 	done
-}
-
-function getip() {
-IP="$(ifconfig wlan0 | grep 'inet addr' | cut -d: -f2 | awk '{print $1}')"
-
-  if [ -z "$IP" ]; then
-	 IP="$(ifconfig eth0 | grep 'inet addr' | cut -d: -f2 | awk '{print $1}')"
-  fi
-
- if [ -z "$IP" ]; then
-	echo "No Internet"
- else
-	echo "${IP}"
-	echo "${IP}" > /storage/ip.txt
- fi
 }
 
 function resolutions() {

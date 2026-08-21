@@ -8,8 +8,8 @@
 DATE=`date -u +%Y-%m-%d-%H.%M.%S`
 BASEDIR="/tmp"
 LOGDIR="log-$DATE"
-RELEASE="`cat /etc/release`"
-GIT="`cat /etc/issue | grep git`"
+read -r RELEASE < /etc/release
+GIT="$(grep git /etc/issue)"
 
 getlog_cmd() {
   if command -v $1 >/dev/null; then
