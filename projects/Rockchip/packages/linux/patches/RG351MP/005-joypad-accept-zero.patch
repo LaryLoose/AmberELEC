@@ -1,0 +1,42 @@
+--- a/drivers/input/joystick/odroidgo3-joypad.c
++++ b/drivers/input/joystick/odroidgo3-joypad.c
+@@ -312,10 +312,10 @@
+	int value;
+
+	if (joypad_amux_select(amux, adc->amux_ch, joypad))
+-		return 0;
++		return -1;
+
+	if (iio_read_channel_processed(amux->iio_ch, &value))
+-		return 0;
++		return -1;
+
+	value *= adc->scale;
+
+@@ -469,7 +469,7 @@
+			struct bt_adc *adc = &joypad->adcs[nbtn];
+
+			adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-			if (!adc->value) {
++			if (adc->value < 0) {
+				dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+					__func__, nbtn);
+				continue;
+@@ -742,7 +742,7 @@
+		struct bt_adc *adc = &joypad->adcs[nbtn];
+
+		adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-		if (!adc->value) {
++		if (adc->value < 0) {
+			dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+				__func__, nbtn);
+			continue;
+@@ -801,7 +801,7 @@
+		struct bt_adc *adc = &joypad->adcs[nbtn];
+
+		adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-		if (!adc->value) {
++		if (adc->value < 0) {
+			dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+				__func__, nbtn);
+			continue;
