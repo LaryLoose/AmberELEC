@@ -1,0 +1,202 @@
+--- a/engines/mtropolis/actions.h
++++ b/engines/mtropolis/actions.h
+@@ -31,6 +31,12 @@
+ 
+ 	kDebugToggleOverlay,
+ 	kDebugSkipMovies,
++
++	kNavTurnLeft,
++	kNavTurnRight,
++	kNavForward,
++	kNavLookUp,
++	kNavLookDown,
+ };
+ 
+ enum MouseButton {
+--- a/engines/mtropolis/runtime.h
++++ b/engines/mtropolis/runtime.h
+@@ -1662,6 +1662,9 @@
+ 	const Common::Point &getCachedMousePosition() const;
+ 	void setModifierCursorOverride(uint32 cursorID);
+ 	void clearModifierCursorOverride();
++
++	// Finds the interactive zone whose cursor modifier applies targetCursorID and synthesizes a click at its center.
++	bool triggerNavigationCursor(uint32 targetCursorID);
+ 	void forceCursorRefreshOnce();
+ 	void setAutoResetCursor(bool enabled);
+ 
+@@ -3064,6 +3067,9 @@
+ 	bool respondsToEvent(const Event &evt) const override;
+ 	VThreadState consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) override;
+ 
++	// Returns the cursor ID this modifier applies (used to locate directional navigation zones).
++	virtual bool queryNavigationCursor(uint32 &outCursorID) const { return false; }
++
+ 	void setName(const Common::String &name);
+ 	const Common::String &getName() const;
+ 
+--- a/engines/mtropolis/runtime.cpp
++++ b/engines/mtropolis/runtime.cpp
+@@ -6308,6 +6308,23 @@
+ 		_project->debugSkipMovies();
+ #endif
+ 		break;
++	// Obsidian navigation: cursor IDs from MCURSORS.C95. Some nodes use variant
++	// cursors for the same direction, so match any of the known variants.
++	case Actions::kNavTurnLeft:
++		(void)(triggerNavigationCursor(11015) || triggerNavigationCursor(11027));
++		break;
++	case Actions::kNavTurnRight:
++		(void)(triggerNavigationCursor(11033) || triggerNavigationCursor(11028));
++		break;
++	case Actions::kNavForward:
++		triggerNavigationCursor(11011);
++		break;
++	case Actions::kNavLookUp:
++		triggerNavigationCursor(11019);
++		break;
++	case Actions::kNavLookDown:
++		(void)(triggerNavigationCursor(11018) || triggerNavigationCursor(11032));
++		break;
+ 	default:
+ 		warning("Unhandled action %i", static_cast<int>(data.action));
+ 		break;
+@@ -6737,6 +6754,66 @@
+ 	}
+ }
+ 
++// Recursively scan a modifier list (including switched-on behaviors) for a cursor modifier.
++static bool mtropolisFindModifierCursor(const Common::Array<Common::SharedPtr<Modifier> > &modifiers, uint32 &outID) {
++	for (const Common::SharedPtr<Modifier> &m : modifiers) {
++		if (m->queryNavigationCursor(outID))
++			return true;
++		IModifierContainer *propagation = m->getMessagePropagationContainer();
++		if (propagation && mtropolisFindModifierCursor(propagation->getModifiers(), outID))
++			return true;
++	}
++	return false;
++}
++
++bool Runtime::triggerNavigationCursor(uint32 targetCursorID) {
++	Common::SharedPtr<Window> mainWindow = _mainWindow.lock();
++	if (!mainWindow)
++		return false;
++
++	Common::Array<ColliderInfo> colliders;
++	for (size_t i = 0; i < _sceneStack.size(); i++) {
++		Structural *scene = _sceneStack[i].scene.get();
++		if (scene)
++			recursiveFindColliders(scene, i, colliders, 0, 0, true);
++	}
++
++	// Sort ascending by layer/depth so the last match is the topmost zone.
++	Common::sort(colliders.begin(), colliders.end(), sortColliderPredicate);
++
++	const ColliderInfo *best = nullptr;
++	const int32 winW = mainWindow->getWidth();
++	const int32 winH = mainWindow->getHeight();
++	for (uint i = 0; i < colliders.size(); i++) {
++		const ColliderInfo &ci = colliders[i];
++		if (!isStructuralMouseInteractive(ci.element, kMouseInteractivityTestAnything))
++			continue;
++		// Only consider zones whose center is within the visible viewport;
++		// Obsidian keeps inactive zones for other view angles parked off-screen.
++		int32 zx = ci.absRect.left + ci.absRect.width() / 2;
++		int32 zy = ci.absRect.top + ci.absRect.height() / 2;
++		if (zx < 0 || zx >= winW || zy < 0 || zy >= winH)
++			continue;
++		uint32 cid = 0;
++		if (mtropolisFindModifierCursor(ci.element->getModifiers(), cid)) {
++			if (cid == targetCursorID)
++				best = &ci;
++		}
++	}
++
++	if (!best)
++		return false;
++
++	int32 cx = best->absRect.left + best->absRect.width() / 2 + mainWindow->getX();
++	int32 cy = best->absRect.top + best->absRect.height() / 2 + mainWindow->getY();
++
++	onMouseMove(cx, cy);
++	onMouseDown(cx, cy, Actions::kMouseButtonLeft);
++	onMouseUp(cx, cy, Actions::kMouseButtonLeft);
++	_system->warpMouse(cx, cy);
++	return true;
++}
++
+ void Runtime::forceCursorRefreshOnce() {
+ 	_forceCursorRefreshOnce = true;
+ }
+--- a/engines/mtropolis/metaengine.cpp
++++ b/engines/mtropolis/metaengine.cpp
+@@ -176,6 +176,13 @@
+ 	act->addDefaultInputMapping("JOY_X");
+ 	keymap->addAction(act);
+ 
++	// Sends Escape so the game's own menu (e.g. Obsidian save/load) can be opened from a gamepad.
++	act = new Common::Action("GAME_MENU", _("Open in-game menu (Escape)"));
++	act->setKeyEvent(Common::KeyState(Common::KEYCODE_ESCAPE, Common::ASCII_ESCAPE));
++	act->addDefaultInputMapping("ESCAPE");
++	act->addDefaultInputMapping("JOY_RIGHT_SHOULDER");
++	keymap->addAction(act);
++
+ 	act = new Common::Action("DEBUG_TOGGLE_OVERLAY", _("Toggle debug overlay"));
+ 	act->setCustomEngineActionEvent(MTropolis::Actions::kDebugToggleOverlay);
+ 	act->addDefaultInputMapping("F10");
+@@ -185,6 +192,30 @@
+ 	act->setCustomEngineActionEvent(MTropolis::Actions::kDebugSkipMovies);
+ 	keymap->addAction(act);
+ 
++	act = new Common::Action("NAV_TURN_LEFT", _("Navigate: turn left"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kNavTurnLeft);
++	act->addDefaultInputMapping("JOY_LEFT");
++	keymap->addAction(act);
++
++	act = new Common::Action("NAV_TURN_RIGHT", _("Navigate: turn right"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kNavTurnRight);
++	act->addDefaultInputMapping("JOY_RIGHT");
++	keymap->addAction(act);
++
++	act = new Common::Action("NAV_FORWARD", _("Navigate: forward"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kNavForward);
++	act->addDefaultInputMapping("JOY_UP");
++	keymap->addAction(act);
++
++	act = new Common::Action("NAV_LOOK_UP", _("Navigate: look up"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kNavLookUp);
++	keymap->addAction(act);
++
++	act = new Common::Action("NAV_LOOK_DOWN", _("Navigate: look down"));
++	act->setCustomEngineActionEvent(MTropolis::Actions::kNavLookDown);
++	act->addDefaultInputMapping("JOY_DOWN");
++	keymap->addAction(act);
++
+ 	return Common::Keymap::arrayOf(keymap);
+ }
+ 
+--- a/engines/mtropolis/plugin/standard.h
++++ b/engines/mtropolis/plugin/standard.h
+@@ -45,6 +45,8 @@
+ 	VThreadState consumeMessage(Runtime *runtime, const Common::SharedPtr<MessageProperties> &msg) override;
+ 	void disable(Runtime *runtime) override;
+ 
++	bool queryNavigationCursor(uint32 &outCursorID) const override;
++
+ #ifdef MTROPOLIS_DEBUG_ENABLE
+ 	const char *debugGetTypeName() const override { return "Cursor Modifier"; }
+ 	SupportStatus debugGetSupportStatus() const override { return kSupportStatusDone; }
+--- a/engines/mtropolis/plugin/standard.cpp
++++ b/engines/mtropolis/plugin/standard.cpp
+@@ -66,6 +66,11 @@
+ void CursorModifier::disable(Runtime *runtime) {
+ }
+ 
++bool CursorModifier::queryNavigationCursor(uint32 &outCursorID) const {
++	outCursorID = _cursorID;
++	return true;
++}
++
+ bool CursorModifier::load(const PlugInModifierLoaderContext &context, const Data::Standard::CursorModifier &data) {
+ 	if (data.applyWhen.type != Data::PlugInTypeTaggedValue::kEvent || data.cursorIDAsLabel.type != Data::PlugInTypeTaggedValue::kLabel)
+ 		return false;
