@@ -125,6 +125,7 @@ standalone_emulators: 'MutableMapping[str, StandaloneEmulator]' = {
 	'raze': StandaloneEmulator('raze', ['/usr/bin/raze.sh', '<path>']),
 	'solarus': StandaloneEmulator('solarus-run', ['/usr/bin/solarus.sh', '<path>']),
 	'yabasanshiroSA': StandaloneEmulator('yabasanshiro', ['/usr/bin/yabasanshiro.sh', '<path>']),
+	'DOSBoxPure': StandaloneEmulator('DOSBoxPure', ['/usr/bin/dosboxpure.sh', '<path>']),
 }
 
 def _load_customized_standalone_emulators():

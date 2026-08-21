@@ -1,0 +1,24 @@
+--- a/Makefile
++++ b/Makefile
+@@ -1,10 +1,10 @@
+ ZillaApp = DOSBoxPure
+-ZILLALIB_PATH = ../ZillaLib
++ZILLALIB_PATH = ZillaLib
+ include $(ZILLALIB_PATH)/Makefile
+ 
+ ifdef ZL_IS_APP_MAKE
+ 
+-DBPDir := ../dosbox-pure
++DBPDir := dosbox-pure
+ 
+ ZL_ADD_SRC_FILES := $(wildcard \
+     $(DBPDir)/*.cpp            \
+@@ -29,7 +29,7 @@
+ ifneq ($(words $(GLCTX)),1)
+   $(error Multiple OpenGL context types specified ($(strip $(GLCTX))))
+ endif
+-COMMONFLAGS += -DZL_VIDEO_$(strip $(GLCTX))
++COMMONFLAGS += -DZL_NATIVE_GLES -DSDL_VIDEO_OPENGL=1 -DSDL_VIDEO_OPENGL_ES2=1 -DZL_VIDEO_$(strip $(GLCTX))
+ 
+ APPFLAGS += -I$(DBPDir) -I$(DBPDir)/include -D__LIBRETRO__ -DDBP_STANDALONE -Wno-switch -Wno-address-of-packed-member -Wno-array-bounds -Wno-format -Wno-maybe-uninitialized -Wno-misleading-indentation -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-sometimes-uninitialized -Wno-bitwise-instead-of-logical -Wno-stringop-truncation -frtti -fexceptions
+ 

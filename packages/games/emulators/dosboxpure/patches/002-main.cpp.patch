@@ -1,0 +1,28 @@
+--- a/main.cpp
++++ b/main.cpp
+@@ -377,7 +377,7 @@
+ extern "C" { struct SDL_Window* SDL_GetMouseFocus(void); }
+ extern "C" { void* SDL_GL_GetProcAddress(const char *proc); } 
+ extern "C" { unsigned long SDL_GetThreadID(struct SDL_Thread* = NULL); }
+-extern "C" { extern int SDL_GetLockModStates(void); }
++extern "C" { extern int SDL_GetModState(void); }
+ #if defined(ZILLALOG)
+ static unsigned long MainThreadID = SDL_GetThreadID();
+ #endif
+@@ -632,6 +632,7 @@
+ 	ZL_JoystickData *joyXInput = NULL, *joyPS4 = NULL;
+ 	for (ZL_JoystickData* joy : vecJoys)
+ 	{
++		if (!joy || !joy->name) continue;
+ 		if (!memcmp(joy->name, "XInput Controller #", 19) && (!joyXInput || joy->name[19] < joyXInput->name[19]))
+ 			joyXInput = joy;
+ 		else if (!strcmp(joy->name, "Wireless Controller") && !joyPS4 && joy->naxes == 6 && joy->nhats == 1 && joy->nballs == 0 && joy->nbuttons == 14)
+@@ -1941,7 +1942,7 @@
+ 	retro_set_environment(retro_environment_cb); //#2
+ 	retro_init(); //#3
+ 
+-	const int init_mod = SDL_GetLockModStates();
++	const int init_mod = SDL_GetModState();
+ 	const uint16_t key_modifiers =
+ 		((init_mod & (ZLKMOD_NUM)) ? RETROKMOD_NUMLOCK : 0) |
+ 		((init_mod & (ZLKMOD_CAPS)) ? RETROKMOD_CAPSLOCK : 0) |

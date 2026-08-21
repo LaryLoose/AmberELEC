@@ -1,0 +1,200 @@
+--- a/main.cpp
++++ b/main.cpp
+@@ -378,6 +378,43 @@
+ extern "C" { void* SDL_GL_GetProcAddress(const char *proc); } 
+ extern "C" { unsigned long SDL_GetThreadID(struct SDL_Thread* = NULL); }
+ extern "C" { extern int SDL_GetModState(void); }
++
++// Minimal SDL2 GameController forward declarations (main.cpp does not include SDL headers)
++extern "C" {
++	struct SDL_GameControllerButtonBind_ZL { int bindType; union { int button; int axis; struct { int hat, hat_mask; } hat; } value; };
++	int SDL_InitSubSystem(unsigned int flags);
++	int SDL_IsGameController(int joystick_index);
++	struct _SDL_GameController* SDL_GameControllerOpen(int joystick_index);
++	void SDL_GameControllerClose(struct _SDL_GameController* gamecontroller);
++	SDL_GameControllerButtonBind_ZL SDL_GameControllerGetBindForButton(struct _SDL_GameController* gamecontroller, int button);
++	SDL_GameControllerButtonBind_ZL SDL_GameControllerGetBindForAxis(struct _SDL_GameController* gamecontroller, int axis);
++	struct SDL_RWops* SDL_RWFromFile(const char* file, const char* mode);
++	int SDL_GameControllerAddMappingsFromRW(struct SDL_RWops* rw, int freerw);
++	// Public joystick API used instead of reinterpreting SDL_Joystick internals (ABI-safe with external SDL2)
++	const char* SDL_JoystickName(struct _SDL_Joystick* joystick);
++	int SDL_JoystickNumAxes(struct _SDL_Joystick* joystick);
++	int SDL_JoystickNumButtons(struct _SDL_Joystick* joystick);
++	int SDL_JoystickNumHats(struct _SDL_Joystick* joystick);
++	int SDL_JoystickNumBalls(struct _SDL_Joystick* joystick);
++	signed short SDL_JoystickGetAxis(struct _SDL_Joystick* joystick, int axis);
++	unsigned char SDL_JoystickGetHat(struct _SDL_Joystick* joystick, int hat);
++	unsigned char SDL_JoystickGetButton(struct _SDL_Joystick* joystick, int button);
++	int SDL_JoystickGetBall(struct _SDL_Joystick* joystick, int ball, int* dx, int* dy);
++	int SDL_JoystickInstanceID(struct _SDL_Joystick* joystick);
++	int SDL_JoystickGetDeviceInstanceID(int device_index);
++	int SDL_NumJoysticks(void);
++}
++#define ZLSDLJOY(j)      ((struct _SDL_Joystick*)(j))
++#define JOY_NAME(j)      SDL_JoystickName(ZLSDLJOY(j))
++#define JOY_NAXES(j)     SDL_JoystickNumAxes(ZLSDLJOY(j))
++#define JOY_NBUTTONS(j)  SDL_JoystickNumButtons(ZLSDLJOY(j))
++#define JOY_NHATS(j)     SDL_JoystickNumHats(ZLSDLJOY(j))
++#define JOY_NBALLS(j)    SDL_JoystickNumBalls(ZLSDLJOY(j))
++#define JOY_AXIS(j,n)    SDL_JoystickGetAxis(ZLSDLJOY(j), (n))
++#define JOY_HAT(j,n)     SDL_JoystickGetHat(ZLSDLJOY(j), (n))
++#define JOY_BUTTON(j,n)  SDL_JoystickGetButton(ZLSDLJOY(j), (n))
++static int JOY_BALL(ZL_JoystickData* j, int n, int y) { int dx = 0, dy = 0; SDL_JoystickGetBall(ZLSDLJOY(j), n, &dx, &dy); return (y ? dy : dx); }
++static int JoyDeviceIndex(ZL_JoystickData* j) { int iid = SDL_JoystickInstanceID(ZLSDLJOY(j)); for (int i = 0, n = SDL_NumJoysticks(); i != n; i++) if (SDL_JoystickGetDeviceInstanceID(i) == iid) return i; return -1; }
+ #if defined(ZILLALOG)
+ static unsigned long MainThreadID = SDL_GetThreadID();
+ #endif
+@@ -393,26 +430,26 @@
+ 		if (forAnalog)
+ 			switch (From)
+ 			{
+-				case FROM_AXIS:   return (short)ZL_Math::Clamp(Joy->axes[Num] * Dir, 0, 0x7fff);
+-				case FROM_HAT:    return ((Joy->hats[Num] & Dir) ? (short)0x7fff : (short)0);
+-				case FROM_BALL:   return (short)ZL_Math::Clamp((ZL_Math::Abs(Dir) == 1 ? Joy->balls[Num].dx : Joy->balls[Num].dy) * ZL_Math::Sign(Dir) * 10, 0, 0x7fff);
+-				case FROM_BUTTON: return (Joy->buttons[Num] ? (short)0x7fff : (short)0);
++				case FROM_AXIS:   return (short)ZL_Math::Clamp(JOY_AXIS(Joy, Num) * Dir, 0, 0x7fff);
++				case FROM_HAT:    return ((JOY_HAT(Joy, Num) & Dir) ? (short)0x7fff : (short)0);
++				case FROM_BALL:   return (short)ZL_Math::Clamp((ZL_Math::Abs(Dir) == 1 ? JOY_BALL(Joy, Num, 0) : JOY_BALL(Joy, Num, 1)) * ZL_Math::Sign(Dir) * 10, 0, 0x7fff);
++				case FROM_BUTTON: return (JOY_BUTTON(Joy, Num) ? (short)0x7fff : (short)0);
+ 				default:break;
+ 			}
+ 		else
+ 			switch (From)
+ 			{
+-				case FROM_AXIS:   return (short)((Joy->axes[Num] * Dir) >= 12000);
+-				case FROM_HAT:    return (short)((Joy->hats[Num] & Dir) ? 1 : 0);
+-				case FROM_BALL:   return (short)(((ZL_Math::Abs(Dir) == 1 ? Joy->balls[Num].dx : Joy->balls[Num].dy) * ZL_Math::Sign(Dir) * 10) > 10);
+-				case FROM_BUTTON: return (short)(Joy->buttons[Num] ? 1 : 0);
++				case FROM_AXIS:   return (short)((JOY_AXIS(Joy, Num) * Dir) >= 12000);
++				case FROM_HAT:    return (short)((JOY_HAT(Joy, Num) & Dir) ? 1 : 0);
++				case FROM_BALL:   return (short)(((ZL_Math::Abs(Dir) == 1 ? JOY_BALL(Joy, Num, 0) : JOY_BALL(Joy, Num, 1)) * ZL_Math::Sign(Dir) * 10) > 10);
++				case FROM_BUTTON: return (short)(JOY_BUTTON(Joy, Num) ? 1 : 0);
+ 				default:break;
+ 			}
+ 		return 0;
+ 	}
+ 	void Describe(std::string& outJoyName, std::string& outBind, const char* prefix, const char* bindname = NULL) const
+ 	{
+-		outJoyName.assign(prefix).append(Joy ? Joy->name : "<Disconnected Controller>");
++		outJoyName.assign(prefix).append(Joy ? JOY_NAME(Joy) : "<Disconnected Controller>");
+ 		if (bindname) { ZL_String::format((ZL_String&)outBind, "%s%s", prefix, bindname); return; }
+ 		switch (From)
+ 		{
+@@ -447,9 +484,9 @@
+ 			res.Num = (unsigned char)(n - 1);
+ 			for (ZL_JoystickData* j : vecJoys)
+ 			{
+-				if (parts[0] != j->name) continue;
++				if (parts[0] != JOY_NAME(j)) continue;
+ 				res.Joy = j;
+-				if (res.Num >= (res.From == FROM_AXIS ? j->naxes : res.From == FROM_HAT ? j->nhats : res.From == FROM_BALL ? j->nballs : res.From == FROM_BUTTON ? j->nbuttons : 0))
++				if (res.Num >= (res.From == FROM_AXIS ? JOY_NAXES(j) : res.From == FROM_HAT ? JOY_NHATS(j) : res.From == FROM_BALL ? JOY_NBALLS(j) : res.From == FROM_BUTTON ? JOY_NBUTTONS(j) : 0))
+ 					res = { NULL };
+ 				break;
+ 			}
+@@ -493,6 +530,68 @@
+ 	"Left Stick Up", "Left Stick Down", "Left Stick Left", "Left Stick Right", "Right Stick Up", "Right Stick Down", "Right Stick Left", "Right Stick Right", // LSTICK,RSTICK
+ };
+ 
++// Build controller bindings from the SDL GameController mapping (gamecontrollerdb), works for any mapped pad
++static SJoyBind JoyBindGameController[_BIND_ID_COUNT];
++static SJoyBind GCToBind(ZL_JoystickData* joy, SDL_GameControllerButtonBind_ZL b, signed char axisDir)
++{
++	SJoyBind r = { NULL, SJoyBind::FROM_NONE, 0, 0 };
++	switch (b.bindType)
++	{
++		case 1: r.Joy = joy; r.From = SJoyBind::FROM_BUTTON; r.Num = (unsigned char)b.value.button;    r.Dir = 0;                                  break; // SDL_CONTROLLER_BINDTYPE_BUTTON
++		case 2: r.Joy = joy; r.From = SJoyBind::FROM_AXIS;   r.Num = (unsigned char)b.value.axis;      r.Dir = axisDir;                            break; // SDL_CONTROLLER_BINDTYPE_AXIS
++		case 3: r.Joy = joy; r.From = SJoyBind::FROM_HAT;    r.Num = (unsigned char)b.value.hat.hat;   r.Dir = (signed char)b.value.hat.hat_mask;  break; // SDL_CONTROLLER_BINDTYPE_HAT (ZL_HAT_* == SDL_HAT_*)
++	}
++	return r;
++}
++static bool BuildBindsFromGameController(ZL_JoystickData* joy)
++{
++	static bool gcInit = false;
++	if (!gcInit)
++	{
++		gcInit = true;
++		SDL_InitSubSystem(0x00002000u); // SDL_INIT_GAMECONTROLLER
++		const char* db = getenv("SDL_GAMECONTROLLERCONFIG_FILE");
++		if (!db || !*db) db = "/storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt";
++		SDL_GameControllerAddMappingsFromRW(SDL_RWFromFile(db, "rb"), 1);
++	}
++	int devidx = JoyDeviceIndex(joy);
++	if (devidx < 0 || !SDL_IsGameController(devidx)) return false;
++	struct _SDL_GameController* gc = SDL_GameControllerOpen(devidx);
++	if (!gc) return false;
++
++	SJoyBind* o = JoyBindGameController;
++	for (int i = 0; i != _BIND_ID_COUNT; i++) { o[i].Joy = NULL; o[i].From = SJoyBind::FROM_NONE; o[i].Num = 0; o[i].Dir = 0; }
++
++	// SDL_CONTROLLER_BUTTON_*: A=0 B=1 X=2 Y=3 BACK=4 GUIDE=5 START=6 LEFTSTICK=7 RIGHTSTICK=8 LEFTSHOULDER=9 RIGHTSHOULDER=10 DPAD_UP=11 DPAD_DOWN=12 DPAD_LEFT=13 DPAD_RIGHT=14
++	o[BIND_ID_UP]     = GCToBind(joy, SDL_GameControllerGetBindForButton(gc, 11), 1);
++	o[BIND_ID_DOWN]   = GCToBind(joy, SDL_GameControllerGetBindForButton(gc, 12), 1);
++	o[BIND_ID_LEFT]   = GCToBind(joy, SDL_GameControllerGetBindForButton(gc, 13), 1);
++	o[BIND_ID_RIGHT]  = GCToBind(joy, SDL_GameControllerGetBindForButton(gc, 14), 1);
++	o[BIND_ID_B]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  0), 1); // RetroPad B (bottom) = SDL A
++	o[BIND_ID_A]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  1), 1); // RetroPad A (right)  = SDL B
++	o[BIND_ID_Y]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  2), 1); // RetroPad Y (left)   = SDL X
++	o[BIND_ID_X]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  3), 1); // RetroPad X (top)    = SDL Y
++	o[BIND_ID_SELECT] = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  4), 1);
++	o[BIND_ID_START]  = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  6), 1);
++	o[BIND_ID_L]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  9), 1);
++	o[BIND_ID_R]      = GCToBind(joy, SDL_GameControllerGetBindForButton(gc, 10), 1);
++	o[BIND_ID_L3]     = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  7), 1);
++	o[BIND_ID_R3]     = GCToBind(joy, SDL_GameControllerGetBindForButton(gc,  8), 1);
++	// Triggers (SDL_CONTROLLER_AXIS_TRIGGERLEFT=4, TRIGGERRIGHT=5) may resolve to a button or an axis
++	o[BIND_ID_L2]     = GCToBind(joy, SDL_GameControllerGetBindForAxis(gc, 4), 1);
++	o[BIND_ID_R2]     = GCToBind(joy, SDL_GameControllerGetBindForAxis(gc, 5), 1);
++	// Analog sticks (SDL_CONTROLLER_AXIS_LEFTX=0 LEFTY=1 RIGHTX=2 RIGHTY=3) split into negative/positive directions
++	SDL_GameControllerButtonBind_ZL blx = SDL_GameControllerGetBindForAxis(gc, 0), bly = SDL_GameControllerGetBindForAxis(gc, 1);
++	SDL_GameControllerButtonBind_ZL brx = SDL_GameControllerGetBindForAxis(gc, 2), bry = SDL_GameControllerGetBindForAxis(gc, 3);
++	if (bly.bindType == 2) { o[BIND_ID_LSTICK_UP]   = GCToBind(joy, bly, -1); o[BIND_ID_LSTICK_DOWN]  = GCToBind(joy, bly, 1); }
++	if (blx.bindType == 2) { o[BIND_ID_LSTICK_LEFT] = GCToBind(joy, blx, -1); o[BIND_ID_LSTICK_RIGHT] = GCToBind(joy, blx, 1); }
++	if (bry.bindType == 2) { o[BIND_ID_RSTICK_UP]   = GCToBind(joy, bry, -1); o[BIND_ID_RSTICK_DOWN]  = GCToBind(joy, bry, 1); }
++	if (brx.bindType == 2) { o[BIND_ID_RSTICK_LEFT] = GCToBind(joy, brx, -1); o[BIND_ID_RSTICK_RIGHT] = GCToBind(joy, brx, 1); }
++
++	SDL_GameControllerClose(gc);
++	return true;
++}
++
+ static inline void DirtySettings() { dirtySettingsTick = ZLTICKS + 10000; }
+ static inline void SynchronizeSettings(bool force) { if (dirtySettingsTick && (force || ZLPASSED(dirtySettingsTick))) { ZL_Application::SettingsSynchronize(); dirtySettingsTick = 0; } }
+ static inline bool IsInterfaceConfigKey(const char* key) { return (key[0] == 'i' || !strcmp(key, "dosbox_pure_aspect_correction")); }
+@@ -629,19 +728,23 @@
+ 		vecJoys.resize(i);
+ 	}
+ 
+-	ZL_JoystickData *joyXInput = NULL, *joyPS4 = NULL;
++	ZL_JoystickData *joyXInput = NULL, *joyPS4 = NULL, *joyGeneric = NULL;
+ 	for (ZL_JoystickData* joy : vecJoys)
+ 	{
+-		if (!joy || !joy->name) continue;
+-		if (!memcmp(joy->name, "XInput Controller #", 19) && (!joyXInput || joy->name[19] < joyXInput->name[19]))
++		const char* jn = (joy ? JOY_NAME(joy) : NULL);
++		if (!jn) continue;
++		if (!memcmp(jn, "XInput Controller #", 19) && (!joyXInput || jn[19] < JOY_NAME(joyXInput)[19]))
+ 			joyXInput = joy;
+-		else if (!strcmp(joy->name, "Wireless Controller") && !joyPS4 && joy->naxes == 6 && joy->nhats == 1 && joy->nballs == 0 && joy->nbuttons == 14)
++		else if (!strcmp(jn, "Wireless Controller") && !joyPS4 && JOY_NAXES(joy) == 6 && JOY_NHATS(joy) == 1 && JOY_NBALLS(joy) == 0 && JOY_NBUTTONS(joy) == 14)
+ 			joyPS4 = joy;
++		else if (!joyGeneric)
++			joyGeneric = joy;
+ 	}
+ 
+ 	SJoyBind* bindtemplate = NULL;
+ 	if      (joyXInput) { for (SJoyBind& it : JoyBindTemplateXInput) { it.Joy = joyXInput; } bindtemplate = JoyBindTemplateXInput; JoyBindTemplateNames = JoyBindTemplateXInputNames; }
+ 	else if (joyPS4)    { for (SJoyBind& it : JoyBindTemplatePS4)    { it.Joy = joyPS4;    } bindtemplate = JoyBindTemplatePS4;    JoyBindTemplateNames = JoyBindTemplatePS4Names;    }
++	else if (joyGeneric && BuildBindsFromGameController(joyGeneric)) { bindtemplate = JoyBindGameController; JoyBindTemplateNames = NULL; }
+ 
+ 	bool useCustomControllerBinding = (((*ZL_Application::SettingsGet("custom_controller_bindings").c_str())|0x20) == 't'); // 't'rue
+ 	if (useCustomControllerBinding)
+@@ -1240,7 +1343,7 @@
+ 		for (ZL_JoystickData* j : vecJoys)
+ 		{
+ 			tst.Joy = j;
+-			const unsigned char nums[] = { 0, (unsigned char)j->naxes, (unsigned char)j->nhats, (unsigned char)j->nballs, (unsigned char)j->nbuttons };
++			const unsigned char nums[] = { 0, (unsigned char)JOY_NAXES(j), (unsigned char)JOY_NHATS(j), (unsigned char)JOY_NBALLS(j), (unsigned char)JOY_NBUTTONS(j) };
+ 			for (tst.From = SJoyBind::FROM_AXIS; tst.From <= SJoyBind::FROM_BUTTON; tst.From = (SJoyBind::EFrom)(tst.From + 1))
+ 				for (tst.Num = nums[tst.From]; tst.Num--;)
+ 					for (int d = dirsCount[tst.From]; d--; num++)

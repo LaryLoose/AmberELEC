@@ -1,0 +1,26 @@
+--- a/ZillaLib/Source/ZL_PlatformSDL.h
++++ b/ZillaLib/Source/ZL_PlatformSDL.h
+@@ -22,7 +22,7 @@
+ #ifndef __ZL_PLATFORM_SDL__
+ #define __ZL_PLATFORM_SDL__
+ 
+-#include <SDL_opengl.h>
++#include <SDL_opengles2.h>
+ 
+ #ifdef __cplusplus
+ 
+@@ -53,6 +53,7 @@
+ #define ZL_MutexNone NULL
+ #define ZL_MutexIsNone(m) (m == NULL)
+ 
++#ifndef ZL_NATIVE_GLES
+ //GL stuff
+ #ifndef __MACOSX__
+ extern PFNGLCREATESHADERPROC             glCreateShader;
+@@ -135,5 +136,6 @@
+ extern PFNGLGENVERTEXARRAYSPROC          glGenVertexArrays;
+ extern PFNGLBINDVERTEXARRAYPROC          glBindVertexArray;
+ extern PFNGLDELETEVERTEXARRAYSPROC       glDeleteVertexArrays;
++#endif
+ #endif //__cplusplus
+ #endif //__ZL_PLATFORM_SDL__

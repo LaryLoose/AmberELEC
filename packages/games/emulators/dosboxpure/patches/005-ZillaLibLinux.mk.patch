@@ -1,0 +1,13 @@
+--- a/ZillaLib/Linux/ZillaLibLinux.mk
++++ b/ZillaLib/Linux/ZillaLibLinux.mk
+@@ -37,8 +37,8 @@
+ ZLFLAGS     := -I$(ZILLALIB_DIR)Include -I$(ZILLALIB_DIR)Source/zlib
+ WARNINGS    := -pedantic -Wall -Wno-long-long -Wno-error=unused-parameter -Wno-pedantic -Wno-unused-local-typedefs -Wno-unused-function -Wno-strict-aliasing -Wno-psabi
+ DEPWARNINGS := -Wno-main -Wno-empty-body -Wno-char-subscripts -Wno-sign-compare -Wno-unused-value -Wno-unused-variable -Wno-unused-but-set-variable -Wno-nonnull -Wno-stringop-truncation -Werror
+-CFLAGS      := $(WARNINGS) -pthread -ffast-math -fomit-frame-pointer -fvisibility=hidden -fno-exceptions -fno-non-call-exceptions -ffunction-sections -fdata-sections
+-LDFLAGS     := -lGL -lpthread -ldl -Wl,--gc-sections
++CFLAGS      := $(WARNINGS) -pthread -ffast-math -fomit-frame-pointer -fvisibility=hidden -fno-exceptions -fno-non-call-exceptions -ffunction-sections -fdata-sections -mcpu=cortex-a35
++LDFLAGS     := -lmali -lpthread -ldl -Wl,--gc-sections
+ CXXFLAGS    := -std=c++11 -fno-rtti
+ CCFLAGS     := -std=gnu99 -D_DEFAULT_SOURCE
+ 

@@ -1,0 +1,37 @@
+--- a/ZillaLib/Source/ZL_PlatformSDL.cpp
++++ b/ZillaLib/Source/ZL_PlatformSDL.cpp
+@@ -52,7 +52,7 @@
+ 
+ extern "C" {
+ #ifdef ZL_USE_EXTERNAL_SDL
+-#include <sdl.h>
++#include <SDL.h>
+ #define SDL_internal_h_
+ #include <../src/video/SDL_sysvideo.h>
+ #else
+@@ -382,7 +382,9 @@
+ 	//printf("Extensions : %s\n", glGetString(GL_EXTENSIONS));
+ 	//printf("\n");
+ 
++#if 0
+ 	InitExtensionEntries();
++#endif
+ 
+ 	/*
+ #ifndef __MACOSX__
+@@ -739,6 +741,7 @@
+ bool ZL_Semaphore::WaitTimeout(int ms) { return (SDL_SemWaitTimeout(impl->sem, (Uint32)ms)==0); }
+ void ZL_Semaphore::Post() { SDL_SemPost(impl->sem); }
+ 
++#ifndef ZL_NATIVE_GLES
+ //gl2 stuff
+ #ifndef __MACOSX__
+ PFNGLCREATESHADERPROC             glCreateShader;
+@@ -904,6 +907,7 @@
+ }
+ #endif
+ 
++#endif
+ #ifndef ZL_USE_EXTERNAL_SDL
+ #define ZL_SDL_DO_OVERRIDE_IMPLEMENTATIONS
+ #include <SDL_config_zillalib.h>
