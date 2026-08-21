@@ -1,0 +1,341 @@
+diff --git a/engines/ags/lib/allegro/parallel.cpp b/engines/ags/lib/allegro/parallel.cpp
+new file mode 100644
+index 0000000..f3c115b
+--- /dev/null
++++ b/engines/ags/lib/allegro/parallel.cpp
+@@ -0,0 +1,171 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++// NOTE: This file deliberately does NOT include any ScummVM headers.
++// common/scummsys.h pulls in common/forbidden.h, which #defines standard
++// symbols (time, clock, FILE, ...) to poison values and would break the
++// libstdc++/POSIX threading headers used here.
++
++#include "ags/lib/allegro/parallel.h"
++
++#include <pthread.h>
++#include <semaphore.h>
++#include <unistd.h>
++#include <atomic>
++#include <cstdlib>
++
++namespace AGS3 {
++namespace Parallel {
++
++namespace {
++
++class Pool {
++public:
++	Pool() {
++		long n = sysconf(_SC_NPROCESSORS_ONLN);
++		if (n < 1)
++			n = 1;
++		if (n > 8)
++			n = 8;
++		// Optional runtime override (e.g. AGS_BLIT_THREADS=1 disables threading).
++		if (const char *env = getenv("AGS_BLIT_THREADS")) {
++			long v = atol(env);
++			if (v >= 1 && v <= 8)
++				n = v;
++		}
++		_nthreads = (int)n;
++		sem_init(&_work, 0, 0);
++		sem_init(&_done, 0, 0);
++		_threads = nullptr;
++		if (_nthreads > 1) {
++			_threads = new pthread_t[_nthreads - 1];
++			for (int i = 0; i < _nthreads - 1; ++i)
++				pthread_create(&_threads[i], nullptr, &Pool::trampoline, this);
++		}
++	}
++
++	~Pool() {
++		_stop.store(true, std::memory_order_release);
++		for (int i = 0; i < _nthreads - 1; ++i)
++			sem_post(&_work);
++		for (int i = 0; i < _nthreads - 1; ++i)
++			pthread_join(_threads[i], nullptr);
++		delete[] _threads;
++		sem_destroy(&_work);
++		sem_destroy(&_done);
++	}
++
++	int numThreads() const { return _nthreads; }
++
++	void run(int total, int minChunk, BandFn fn, void *ctx) {
++		int nb = _nthreads;
++		if (minChunk > 0 && total / minChunk < nb)
++			nb = total / minChunk;
++		if (nb < 1)
++			nb = 1;
++		if (nb == 1) {
++			fn(0, total, ctx);
++			return;
++		}
++
++		_fn = fn;
++		_ctx = ctx;
++		_total = total;
++		_bands = nb;
++		_nextBand.store(0, std::memory_order_relaxed);
++
++		// Wake all workers; each grabs bands atomically and posts _done once.
++		for (int i = 0; i < _nthreads - 1; ++i)
++			sem_post(&_work);
++
++		// The calling thread participates too.
++		drain();
++
++		for (int i = 0; i < _nthreads - 1; ++i)
++			sem_wait(&_done);
++	}
++
++private:
++	static void *trampoline(void *p) {
++		static_cast<Pool *>(p)->worker();
++		return nullptr;
++	}
++
++	void range(int b, int &s, int &e) const {
++		const int base = _total / _bands;
++		const int extra = _total % _bands;
++		s = b * base + (b < extra ? b : extra);
++		e = s + base + (b < extra ? 1 : 0);
++	}
++
++	void drain() {
++		for (;;) {
++			const int b = _nextBand.fetch_add(1, std::memory_order_relaxed);
++			if (b >= _bands)
++				break;
++			int s, e;
++			range(b, s, e);
++			_fn(s, e, _ctx);
++		}
++	}
++
++	void worker() {
++		for (;;) {
++			sem_wait(&_work);
++			if (_stop.load(std::memory_order_acquire))
++				return;
++			drain();
++			sem_post(&_done);
++		}
++	}
++
++	int _nthreads = 1;
++	pthread_t *_threads = nullptr;
++	sem_t _work;
++	sem_t _done;
++
++	BandFn _fn = nullptr;
++	void *_ctx = nullptr;
++	int _total = 0;
++	int _bands = 0;
++	std::atomic<int> _nextBand{0};
++	std::atomic<bool> _stop{false};
++};
++
++Pool &pool() {
++	static Pool instance;
++	return instance;
++}
++
++} // namespace
++
++void forBands(int totalRows, int minRowsPerBand, BandFn fn, void *ctx) {
++	if (totalRows <= 0)
++		return;
++	pool().run(totalRows, minRowsPerBand, fn, ctx);
++}
++
++int numThreads() {
++	return pool().numThreads();
++}
++
++} // namespace Parallel
++} // namespace AGS3
+diff --git a/engines/ags/lib/allegro/parallel.h b/engines/ags/lib/allegro/parallel.h
+new file mode 100644
+index 0000000..0cf5ea5
+--- /dev/null
++++ b/engines/ags/lib/allegro/parallel.h
+@@ -0,0 +1,48 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++// Minimal work-splitting helper backed by a persistent thread pool, used to
++// distribute independent scanline ranges of the software blitter across CPU
++// cores. Intentionally declares no system types so it can be included from
++// translation units where common/forbidden.h is active.
++
++#ifndef AGS_LIB_ALLEGRO_PARALLEL_H
++#define AGS_LIB_ALLEGRO_PARALLEL_H
++
++namespace AGS3 {
++namespace Parallel {
++
++// Processes the half-open row range [startRow, endRow) for one band.
++typedef void (*BandFn)(int startRow, int endRow, void *ctx);
++
++// Splits [0, totalRows) into up to numThreads() bands (each at least
++// minRowsPerBand rows) and runs fn on them across the pool, blocking until
++// all bands are done. Falls back to a direct call when splitting is not
++// worthwhile.
++void forBands(int totalRows, int minRowsPerBand, BandFn fn, void *ctx);
++
++// Number of participating threads (>= 1).
++int numThreads();
++
++} // namespace Parallel
++} // namespace AGS3
++
++#endif
+diff --git a/engines/ags/lib/allegro/surface_neon.cpp b/engines/ags/lib/allegro/surface_neon.cpp
+index 49507e5..1723220 100644
+--- a/engines/ags/lib/allegro/surface_neon.cpp
++++ b/engines/ags/lib/allegro/surface_neon.cpp
+@@ -28,6 +28,7 @@
+ #include "ags/lib/allegro/color.h"
+ #include "ags/lib/allegro/flood.h"
+ #include "ags/lib/allegro/gfx.h"
++#include "ags/lib/allegro/parallel.h"
+ #include "common/textconsole.h"
+ #include "graphics/screen.h"
+ 
+@@ -418,6 +419,13 @@ static inline void drawPixelSIMD(byte *destPtr, const byte *srcP2, uint32x4_t ti
+ 	// we do this here because we need to check if we should skip the pixel before we blend it
+ 	uint32x4_t mask1 = skipTrans ? vceqq_u32(vandq_u32(srcCols, maskedAlphas), transColors) : vmovq_n_u32(0);
+ 	mask1 = vorrq_u32(mask1, skipMask);
++	// Lossless fast path: if all four pixels keep the destination (fully
++	// transparent / skipped), skip the costly blend and the store entirely.
++	{
++		uint32x2_t m = vand_u32(vget_low_u32(mask1), vget_high_u32(mask1));
++		if ((vget_lane_u32(m, 0) & vget_lane_u32(m, 1)) == 0xFFFFFFFFu)
++			return;
++	}
+ 	if (srcAlpha != -1) {
+ 		// take into account for useTint
+ 		if (useTint) {
+@@ -465,6 +473,42 @@ static inline void drawPixelSIMD2Bpp(byte *destPtr, const byte *srcP2, uint16x8_
+ 
+ public:
+ 
++// Shared, read-only state for one non-scaled blit, passed to the per-band
++// worker so each scanline range can be rendered independently.
++struct DrawRowBandCtx {
++	BITMAP::DrawInnerArgs *args;
++	int destY0, yCtr0;
++	int xDir, xCtrStart, xCtrBppStart, xCtrWidth, secondToLast;
++	uint32x4_t tint, alphas, maskedAlphas, transColors;
++};
++
++// Renders one band of scanlines [startRow, endRow) of a non-scaled blit.
++// Each band writes disjoint destination rows, so bands run concurrently.
++template<int DestBytesPerPixel, int SrcBytesPerPixel>
++static void drawRowBand(int startRow, int endRow, void *ctxv) {
++	const DrawRowBandCtx &c = *static_cast<const DrawRowBandCtx *>(ctxv);
++	BITMAP::DrawInnerArgs &args = *c.args;
++	for (int r = startRow; r < endRow; ++r) {
++		const int myYCtr = c.yCtr0 + r;
++		byte *rowDestP = (byte *)args.destArea.getBasePtr(0, c.destY0 + r);
++		const byte *rowSrcP = (const byte *)args.src.getBasePtr(
++		                          args.horizFlip ? args.srcArea.right - 4 : args.srcArea.left,
++		                          args.vertFlip ? args.srcArea.bottom - 1 - myYCtr : args.srcArea.top + myYCtr);
++		int xCtr = c.xCtrStart, xCtrBpp = c.xCtrBppStart, destX = args.xStart;
++		for (; xCtr < c.secondToLast; destX += 4, xCtr += 4, xCtrBpp += SrcBytesPerPixel * 4) {
++			byte *destPtr = &rowDestP[destX * DestBytesPerPixel];
++			drawPixelSIMD<DestBytesPerPixel, SrcBytesPerPixel>(destPtr, rowSrcP, c.tint, c.alphas, c.maskedAlphas, c.transColors, c.xDir, xCtrBpp, args.srcAlpha, args.skipTrans, args.horizFlip, args.useTint, vmovq_n_u32(0));
++		}
++		byte *destPtr = &rowDestP[destX * DestBytesPerPixel];
++		uint32x4_t srcCols = vmovq_n_u32(0);
++		uint32x4_t destCols = vmovq_n_u32(0);
++		memcpy(&srcCols, rowSrcP + c.xDir * xCtrBpp, (c.xCtrWidth - xCtr) * SrcBytesPerPixel);
++		memcpy(&destCols, destPtr, (c.xCtrWidth - xCtr) * DestBytesPerPixel);
++		drawPixelSIMD<DestBytesPerPixel, SrcBytesPerPixel>((byte *)&destCols, (byte *)&srcCols, c.tint, c.alphas, c.maskedAlphas, c.transColors, c.xDir, 0, args.srcAlpha, args.skipTrans, args.horizFlip, args.useTint, vmovq_n_u32(0));
++		memcpy(destPtr, &destCols, (c.xCtrWidth - xCtr) * DestBytesPerPixel);
++	}
++}
++
+ // This template handles 2bpp and 4bpp, the other specializations handle 1bpp and format conversion blits
+ template<int DestBytesPerPixel, int SrcBytesPerPixel, bool Scale>
+ static void drawInner4BppWithConv(BITMAP::DrawInnerArgs &args) {
+@@ -521,6 +565,28 @@ static void drawInner4BppWithConv(BITMAP::DrawInnerArgs &args) {
+ 	const byte *srcP = (const byte *)args.src.getBasePtr(
+ 	                       args.horizFlip ? args.srcArea.right - 4 : args.srcArea.left,
+ 	                       args.vertFlip ? args.srcArea.bottom - 1 - yCtr : args.srcArea.top + yCtr);
++
++	// Non-scaled blit: rows are independent (disjoint destination rows, read-only
++	// source, constant blender mode), so distribute them across CPU cores.
++	if (!Scale) {
++		DrawRowBandCtx ctx;
++		ctx.args = &args;
++		ctx.destY0 = destY;
++		ctx.yCtr0 = yCtr;
++		ctx.xDir = xDir;
++		ctx.xCtrStart = xCtrStart;
++		ctx.xCtrBppStart = xCtrBppStart;
++		ctx.xCtrWidth = xCtrWidth;
++		ctx.secondToLast = secondToLast;
++		ctx.tint = tint;
++		ctx.alphas = alphas;
++		ctx.maskedAlphas = maskedAlphas;
++		ctx.transColors = transColors;
++		Parallel::forBands(yCtrHeight - yCtr, 16,
++			&drawRowBand<DestBytesPerPixel, SrcBytesPerPixel>, &ctx);
++		return;
++	}
++
+ 	for (; yCtr < yCtrHeight; ++destY, ++yCtr, scaleYCtr += args.scaleY) {
+ 		uint32x4_t xCtrWidthSIMD = vdupq_n_u32(xCtrWidth); // This is the width of the row
+ 
+diff --git a/engines/ags/module.mk b/engines/ags/module.mk
+index afc6842..076355f 100644
+--- a/engines/ags/module.mk
++++ b/engines/ags/module.mk
+@@ -22,6 +22,7 @@ MODULE_OBJS = \
+ 	lib/allegro/gfx.o \
+ 	lib/allegro/graphics.o \
+ 	lib/allegro/math.o \
++	lib/allegro/parallel.o \
+ 	lib/allegro/rotate.o \
+ 	lib/allegro/surface.o \
+ 	lib/allegro/surface_generic.o \

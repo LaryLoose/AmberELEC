@@ -1,0 +1,82 @@
+--- a/engines/ags/dialogs.cpp
++++ b/engines/ags/dialogs.cpp
+@@ -52,6 +52,7 @@
+ 	GUI::CheckboxWidget *_overrideSavesCheckbox;
+ 	GUI::CheckboxWidget *_forceTextAACheckbox;
+ 	GUI::CheckboxWidget *_displayFPSCheckbox;
++	GUI::PopUpWidget *_nightmareFramesFpsPopUp;
+ };
+ 
+ AGSOptionsWidget::AGSOptionsWidget(GuiObject *boss, const Common::String &name, const Common::String &domain) :
+@@ -83,6 +84,17 @@
+ 
+ 	// Display fps
+ 	_displayFPSCheckbox = new GUI::CheckboxWidget(widgetsBoss(), _dialogLayout + ".displayFPS", _("Show FPS"), _("Show the current FPS-rate, while you play."));
++
++	_nightmareFramesFpsPopUp = nullptr;
++	if (_domain == "nightmareframes") {
++		GUI::StaticTextWidget *frameRateLabel = new GUI::StaticTextWidget(widgetsBoss(), _dialogLayout + ".nightmareFramesFps_desc", _("Frame rate:"), _("Choose the frame rate used by Nightmare Frames."));
++		frameRateLabel->setAlign(Graphics::kTextAlignRight);
++		_nightmareFramesFpsPopUp = new GUI::PopUpWidget(widgetsBoss(), _dialogLayout + ".nightmareFramesFps");
++		_nightmareFramesFpsPopUp->appendEntry(_("Original"), 0);
++		_nightmareFramesFpsPopUp->appendEntry("30 FPS", 30);
++		_nightmareFramesFpsPopUp->appendEntry("40 FPS", 40);
++		_nightmareFramesFpsPopUp->appendEntry("60 FPS", 60);
++	}
+ }
+ 
+ void AGSOptionsWidget::defineLayout(GUI::ThemeEval &layouts, const Common::String &layoutName, const Common::String &overlayedLayout) const {
+@@ -96,6 +108,11 @@
+ 	layouts.addWidget("savesOvr", "Checkbox");
+ 	layouts.addWidget("textAA", "Checkbox");
+ 	layouts.addWidget("displayFPS", "Checkbox");
++	if (_nightmareFramesFpsPopUp) {
++		layouts.addLayout(GUI::ThemeLayout::kLayoutHorizontal).addPadding(0, 0, 0, 0);
++		layouts.addWidget("nightmareFramesFps_desc", "OptionsLabel");
++		layouts.addWidget("nightmareFramesFps", "PopUp").closeLayout();
++	}
+ 
+ 	layouts.closeLayout().closeDialog();
+ }
+@@ -141,6 +158,14 @@
+ 		if (parseBool(displayFPS, val))
+ 			_displayFPSCheckbox->setState(val);
+ 	}
++
++	if (_nightmareFramesFpsPopUp) {
++		int frameRate = 0;
++		Common::String frameRateValue;
++		if (gameConfig->tryGetVal("nightmare_frames_fps", frameRateValue))
++			frameRate = atoi(frameRateValue.c_str());
++		_nightmareFramesFpsPopUp->setSelectedTag(frameRate);
++	}
+ }
+ 
+ bool AGSOptionsWidget::save() {
+@@ -154,6 +179,8 @@
+ 		ConfMan.setBool("save_override", _overrideSavesCheckbox->getState(), _domain);
+ 	ConfMan.setBool("force_text_aa", _forceTextAACheckbox->getState(), _domain);
+ 	ConfMan.setBool("display_fps", _displayFPSCheckbox->getState(), _domain);
++	if (_nightmareFramesFpsPopUp)
++		ConfMan.setInt("nightmare_frames_fps", _nightmareFramesFpsPopUp->getSelectedTag(), _domain);
+ 
+ 	return true;
+ }
+--- a/engines/ags/engine/ac/game.cpp
++++ b/engines/ags/engine/ac/game.cpp
+@@ -192,6 +192,15 @@
+ }
+ 
+ void set_game_speed(int new_fps) {
++	if (ConfMan.getActiveDomainName() == "nightmareframes") {
++		Common::String frameRate;
++		if (ConfMan.getActiveDomain()->tryGetVal("nightmare_frames_fps", frameRate)) {
++			const int selectedFrameRate = atoi(frameRate.c_str());
++			if (selectedFrameRate == 30 || selectedFrameRate == 40 || selectedFrameRate == 60)
++				new_fps = selectedFrameRate;
++		}
++	}
++
+ 	_G(frames_per_second) = new_fps;
+ 	if (!isTimerFpsMaxed()) // if in maxed mode, don't update timer for now
+ 		setTimerFps(new_fps);
