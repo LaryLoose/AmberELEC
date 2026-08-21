@@ -112,9 +112,9 @@ index b9362f7059a..772f4aa72d7 100644
  	_inversion = ThemeEngine::kTextInversion;
 +	_currentKeyDown = 0;
 +	_nextKeyRepeatTime = 0;
+ 	_isMouseDown = _isDragging = false;
+ 	_dragStartY = _dragLastY = 0;
  
- 	// If we lose focus, we simply forget the user changes
- 	_editMode = false;
 
 diff --git a/gui/widgets/list.h b/gui/widgets/list.h
 index f99b2574465..38cfe0cb3a8 100644
