@@ -1,0 +1,345 @@
+From: AmberELEC battery coulomb fuel gauge
+Subject: [PATCH] rk817_battery: measured OCV table, coulomb SoC, idle re-anchor, fcc learning
+
+Supersedes the earlier raw-voltage capacity workaround. The RG351MP shipped with
+a generic placeholder ocv_table (shared verbatim across rg351mp/rg351v/xu10),
+bat_res=100 and a wrong design_capacity, and the vendor relax/OCV recalibration
+never triggers under emulation load, so the coulomb gauge drifted and AmberELEC
+reported a raw battery voltage that ratchets to 100% while charging.
+
+Device tree (default + timing_fix):
+- ocv_table measured on an RG351MP from a full IR-compensated discharge
+  (tools/ocv_analyze.py); real Li-Ion shape incl. the flat bottom.
+- bat_res 100 -> 154 mOhm (measured). design_capacity/qmax kept at the nameplate
+  (3500/3700); the actual (aged) capacity is learned at runtime.
+
+Driver:
+- POWER_SUPPLY_PROP_CAPACITY / STATUS / uevent report the coulomb SoC (rsoc).
+- rk817_bat_idle_ocv_calib(): re-anchor the coulomb counter to the IR-compensated
+  OCV (V + |I|*bat_res) when discharging at low steady current; only pulls DOWN
+  (SoC cannot rise while discharging), avoiding spurious jumps at table top.
+- rk817_bat_fcc_learn(): learn real full-charge capacity by counting coulombs
+  from CHARGE_FINISH to empty and persist to NEW_FCC, tracking ageing. Own
+  integrator, clamp [design/2, qmax], a recharge voids the measurement.
+- The obsolete voltage-derived capacity estimator is dropped; learned fcc +
+  progress are exposed read-only at sysfs fcc.
+---
+--- a/drivers/power/rk817_battery.c
++++ b/drivers/power/rk817_battery.c
+@@ -173,6 +173,11 @@
+ #define SIMULATE_CHRG_K			1500
+ #define FULL_CHRG_K			400
+ 
++/* idle OCV re-anchor: replaces vendor relax path that never fires under load */
++#define IDLE_CALIB_CUR_MAX		500	/* mA: only correct near rest */
++#define IDLE_CALIB_CNT			12	/* consecutive cycles (~1 min) */
++#define IDLE_CALIB_MIN_GAP		3	/* %: min soc drift to correct */
++
+ enum work_mode {
+ 	MODE_ZERO = 0,
+ 	MODE_FINISH,
+@@ -598,6 +603,10 @@
+ 	bool				is_first_on;
+ 	bool				is_force_calib;
+ 	int				last_dsoc;
++	int				idle_calib_cnt;
++	s64				learn_dis_uah;
++	bool				learn_valid;
++	unsigned long			learn_last_sec;
+ 	u8				cvtlmt_int_event;
+ 	u8				slp_dcdc_en_reg;
+ 	int				ocv_pre_dsoc;
+@@ -1728,6 +1737,51 @@
+ 	INIT_DELAYED_WORK(&battery->calib_delay_work, rk817_bat_internal_calib);
+ }
+ 
++/*
++ * Learn the real full-charge capacity by counting the coulombs delivered from
++ * a full charge (CHARGE_FINISH) down to empty (pwroff). Uses an own integrator
++ * because the OCV re-anchor resets the hw coulomb registers. Tracks ageing and
++ * persists the result to NEW_FCC.
++ */
++static void rk817_bat_fcc_learn(struct rk817_battery_device *battery)
++{
++	unsigned long now = get_boot_sec();
++	unsigned long dt = (battery->learn_last_sec &&
++			    now > battery->learn_last_sec) ?
++			   now - battery->learn_last_sec : 0;
++
++	battery->learn_last_sec = now;
++
++	/* (re)anchor while full: this charger reports CHRG_OFF (not CHARGE_FINISH)
++	 * at full, so key off the SoC (rsoc is in milli-%) instead */
++	if (battery->rsoc >= 99500) {
++		battery->learn_dis_uah = 0;
++		battery->learn_valid = true;
++		return;
++	}
++	if (battery->current_avg > 0) {	/* recharge before empty voids it */
++		battery->learn_valid = false;
++		return;
++	}
++	if (!battery->learn_valid)
++		return;
++
++	if (dt > 0 && dt < 300 && battery->current_avg < 0)
++		battery->learn_dis_uah +=
++			(s64)(-battery->current_avg) * dt * 1000 / 3600;
++
++	if (battery->voltage_avg <= battery->pdata->pwroff_vol) {
++		int learned = (int)(battery->learn_dis_uah / 1000);
++
++		battery->learn_valid = false;
++		if (learned > battery->pdata->design_capacity / 2 &&
++		    learned <= battery->pdata->design_qmax) {
++			battery->fcc = learned;
++			rk817_bat_save_fcc(battery, learned);
++		}
++	}
++}
++
+ static void rk817_bat_init_fg(struct rk817_battery_device *battery)
+ {
+ 	rk817_bat_adc_init(battery);
+@@ -2019,29 +2073,6 @@
+ 	return (battery->usb_in || battery->ac_in);
+ }
+ 
+-//static int rg351p_battery_skip = 30000;
+-static int rg351p_battery_pre_voltage = 5000;
+-#define RG351_BAT_MAX_VOLTAGE 3900
+-#define RG351_BAT_MIN_VOLTAGE 3300
+-static int rk817_battery_rg351p_capacity_get(int voltage,int charge_status)
+-{
+-	if(rg351p_battery_pre_voltage>=5000){
+-		rg351p_battery_pre_voltage = RG351_BAT_MAX_VOLTAGE;
+-	}
+-	//if(rg351p_battery_skip++ >= 30000){
+-		if(voltage<3900 && voltage>3300 && (voltage<rg351p_battery_pre_voltage || charge_status)){
+-			rg351p_battery_pre_voltage = voltage;
+-		}else if(voltage>=3900){
+-			rg351p_battery_pre_voltage = RG351_BAT_MAX_VOLTAGE;
+-		}else if(voltage<=3300){
+-			rg351p_battery_pre_voltage = RG351_BAT_MIN_VOLTAGE;
+-		}
+-		//rg351p_battery_skip = 0;
+-	//}
+-	return (rg351p_battery_pre_voltage-RG351_BAT_MIN_VOLTAGE)/((RG351_BAT_MAX_VOLTAGE-RG351_BAT_MIN_VOLTAGE)/100);
+-	
+-}
+-
+ static int rk817_battery_get_property(struct power_supply *psy,
+ 				      enum power_supply_property psp,
+ 				      union power_supply_propval *val)
+@@ -2060,14 +2091,16 @@
+ 			val->intval = VIRTUAL_VOLTAGE * 1000;
+ 		break;
+ 	case POWER_SUPPLY_PROP_CAPACITY:
+-		/*
+-		val->intval = (battery->dsoc  + 500) / 1000;
++		/* report the coulomb SoC (rsoc): now kept accurate by the
++		 * measured ocv_table + idle OCV re-anchor, so no need for the
++		 * lossy/stale-prone dsoc smoothing layer */
++		val->intval = (battery->rsoc + 500) / 1000;
++		if (val->intval > 100)
++			val->intval = 100;
++		else if (val->intval < 0)
++			val->intval = 0;
+ 		if (battery->pdata->bat_mode == MODE_VIRTUAL)
+ 			val->intval = VIRTUAL_SOC;
+-		*/
+-		//dev_err(dev, "%d\n",battery->voltage_avg);
+-		val->intval = rk817_battery_rg351p_capacity_get(battery->voltage_avg,rk817_bat_get_charge_state(battery));
+-		
+ 		break;
+ 	case POWER_SUPPLY_PROP_HEALTH:
+ 		val->intval = POWER_SUPPLY_HEALTH_GOOD;
+@@ -2082,7 +2115,7 @@
+ 	case POWER_SUPPLY_PROP_STATUS:
+ 		if (battery->pdata->bat_mode == MODE_VIRTUAL)
+ 			val->intval = VIRTUAL_STATUS;
+-		else if (battery->dsoc == 100 * 1000)
++		else if (battery->rsoc >= 100 * 1000)
+ 			val->intval = POWER_SUPPLY_STATUS_FULL;
+ 		else {
+ 			if ((battery->chip_id != RK809_ID) &&
+@@ -2122,9 +2155,23 @@
+ 	.get_property	= rk817_battery_get_property,
+ };
+ 
++/* observability for the fcc learner: <fcc_mAh> <learned_this_cycle_mAh> <valid> */
++static ssize_t fcc_show(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct rk817_battery_device *battery = power_supply_get_drvdata(psy);
++
++	return sprintf(buf, "%d %d %d\n", battery->fcc,
++		       (int)(battery->learn_dis_uah / 1000),
++		       battery->learn_valid);
++}
++static DEVICE_ATTR_RO(fcc);
++
+ static int rk817_bat_init_power_supply(struct rk817_battery_device *battery)
+ {
+ 	struct power_supply_config psy_cfg = { .drv_data = battery, };
++	int ret;
+ 
+ 	battery->bat = devm_power_supply_register(battery->dev,
+ 						  &rk817_bat_desc,
+@@ -2134,6 +2181,10 @@
+ 		return PTR_ERR(battery->bat);
+ 	}
+ 
++	ret = device_create_file(&battery->bat->dev, &dev_attr_fcc);
++	if (ret)
++		dev_err(battery->dev, "create fcc attr failed\n");
++
+ 	return 0;
+ }
+ 
+@@ -2198,16 +2249,17 @@
+ static void rk817_bat_power_supply_changed(struct rk817_battery_device *battery)
+ {
+ 	static int old_soc = -1;
++	int soc = (battery->rsoc + 500) / 1000;
+ 
+ 	if (battery->dsoc > 100 * 1000)
+ 		battery->dsoc = 100 * 1000;
+ 	else if (battery->dsoc < 0)
+ 		battery->dsoc = 0;
+ 
+-	if (battery->dsoc == old_soc)
++	if (soc == old_soc)
+ 		return;
+ 
+-	old_soc = battery->dsoc;
++	old_soc = soc;
+ 	battery->last_dsoc = battery->dsoc;
+ 	power_supply_changed(battery->bat);
+ 	DBG("changed: dsoc=%d, rsoc=%d, v=%d, ov=%d c=%d, cap=%d, f=%d\n",
+@@ -2845,6 +2897,41 @@
+ 	DBG("info END.\n");
+ }
+ 
++static void rk817_bat_init_capacity(struct rk817_battery_device *battery,
++				    u32 cap);
++
++/*
++ * Re-anchor the coulomb SoC to the IR-compensated OCV whenever the load is low
++ * and steady. The vendor relax/sleep calibration never triggers here (the
++ * device rarely suspends), so the counter would otherwise drift freely.
++ */
++static void rk817_bat_idle_ocv_calib(struct rk817_battery_device *battery)
++{
++	int cur = battery->current_avg;
++	int ocv_vol, ocv_cap, ocv_soc;
++
++	if (battery->chrg_status == CHARGE_FINISH || cur >= 0 ||
++	    -cur > IDLE_CALIB_CUR_MAX) {
++		battery->idle_calib_cnt = 0;
++		return;
++	}
++	if (++battery->idle_calib_cnt < IDLE_CALIB_CNT)
++		return;
++	battery->idle_calib_cnt = 0;
++
++	ocv_vol = battery->voltage_avg + (-cur) * battery->bat_res / 1000;
++	ocv_soc = rk817_bat_vol_to_soc(battery, ocv_vol);
++	ocv_cap = rk817_bat_vol_to_cap(battery, ocv_vol);
++
++	/* this only runs while discharging, where SoC can not rise: let OCV pull
++	 * the coulomb count DOWN only, never inflate it (e.g. when the top of the
++	 * table saturates at 100% because the cell was charged above it) */
++	if (battery->rsoc / 1000 - ocv_soc < IDLE_CALIB_MIN_GAP)
++		return;
++
++	rk817_bat_init_capacity(battery, ocv_cap);
++}
++
+ static void rk817_battery_work(struct work_struct *work)
+ {
+ 	struct rk817_battery_device *battery =
+@@ -2853,6 +2940,8 @@
+ 			     bat_delay_work.work);
+ 
+ 	rk817_bat_update_info(battery);
++	rk817_bat_idle_ocv_calib(battery);
++	rk817_bat_fcc_learn(battery);
+ 	rk817_bat_lowpwr_check(battery);
+ 	rk817_bat_display_smooth(battery);
+ 	rk817_bat_power_supply_changed(battery);
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
+@@ -1234,9 +1234,9 @@
+ 
+ 		battery {
+ 			compatible = "rk817,battery";
+-			ocv_table = <3165 3220 3280 3330 3380 3430 3480
+-			3530 3580 3630 3670 3710 3750 3790
+-			3830 3870 3910 3950 3990 3995 4000>;
++			ocv_table = <3476 3504 3535 3557 3576 3590 3604
++			3617 3631 3650 3675 3706 3740 3776
++			3815 3855 3897 3940 3985 4034 4081>;
+ 
+ 
+ 			/* KPL605475 Battery Spec */
+@@ -1249,9 +1249,9 @@
+ 				Charging Voltage Max : 4.25V
+ 				Sample resister : 10 mohm
+ 			*/
+-			design_capacity = <3380>;
+-			design_qmax = <3718>;
+-			bat_res = <100>;
++			design_capacity = <3500>;
++			design_qmax = <3700>;
++			bat_res = <154>;
+ 			sleep_enter_current = <300>;
+ 			sleep_exit_current = <300>;
+ 			sleep_filter_current = <100>;
+@@ -1269,7 +1269,7 @@
+ 			min_input_voltage = <4500>;
+ 			max_input_current = <1500>;
+ 			max_chrg_current = <2000>;
+-			max_chrg_voltage = <4200>;
++			max_chrg_voltage = <4100>;
+ 			chrg_term_mode = <0>;
+ 			chrg_finish_cur = <52>;
+ 			virtual_power = <0>;
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
+@@ -1234,9 +1234,9 @@
+ 
+ 		battery {
+ 			compatible = "rk817,battery";
+-			ocv_table = <3165 3220 3280 3330 3380 3430 3480
+-			3530 3580 3630 3670 3710 3750 3790
+-			3830 3870 3910 3950 3990 3995 4000>;
++			ocv_table = <3476 3504 3535 3557 3576 3590 3604
++			3617 3631 3650 3675 3706 3740 3776
++			3815 3855 3897 3940 3985 4034 4081>;
+ 
+ 
+ 			/* KPL605475 Battery Spec */
+@@ -1249,9 +1249,9 @@
+ 				Charging Voltage Max : 4.25V
+ 				Sample resister : 10 mohm
+ 			*/
+-			design_capacity = <3380>;
+-			design_qmax = <3718>;
+-			bat_res = <100>;
++			design_capacity = <3500>;
++			design_qmax = <3700>;
++			bat_res = <154>;
+ 			sleep_enter_current = <300>;
+ 			sleep_exit_current = <300>;
+ 			sleep_filter_current = <100>;
+@@ -1269,7 +1269,7 @@
+ 			min_input_voltage = <4500>;
+ 			max_input_current = <1500>;
+ 			max_chrg_current = <2000>;
+-			max_chrg_voltage = <4200>;
++			max_chrg_voltage = <4100>;
+ 			chrg_term_mode = <0>;
+ 			chrg_finish_cur = <52>;
+ 			virtual_power = <0>;

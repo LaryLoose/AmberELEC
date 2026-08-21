@@ -1,0 +1,23 @@
+From: AmberELEC RG351MP
+Subject: [PATCH] rk817_charger: do not wake from DC detect changes
+
+The RG351MP uses the RK817 DC detect GPIO to report charger insertion and
+removal.  Charger state detection remains active, but a cable change should
+not wake the device from suspend.  Keep the PMIC wake source for the power
+key and disable wake only for this charger-detect IRQ.
+
+---
+ drivers/power/rk817_charger.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/power/rk817_charger.c b/drivers/power/rk817_charger.c
+--- a/drivers/power/rk817_charger.c
++++ b/drivers/power/rk817_charger.c
+@@ -1030,7 +1030,6 @@
+ 		dev_err(charge->dev, "rk817_dc_det_irq request failed!\n");
+ 		return ret;
+ 	}
+-	enable_irq_wake(dc_det_irq);
+ 
+ 	if (charge->dc_charger != DC_TYPE_NONE_CHARGER)
+ 		rk817_charge_set_chrg_param(charge, charge->dc_charger);
