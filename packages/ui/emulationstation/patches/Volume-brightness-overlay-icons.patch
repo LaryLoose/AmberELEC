@@ -1,0 +1,949 @@
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+index 7044d3c3a..66abdd67f 100644
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -4534,7 +4534,7 @@ void GuiMenu::openSoundSettings()
+ 		musicVolume->setOnValueChanged([](const float &newVal) { Settings::getInstance()->setInt("MusicVolume", (int)round(newVal)); });
+ 		s->addWithLabel(_("MUSIC VOLUME"), musicVolume);
+ 
+-		s->addSwitch(_("SHOW OVERLAY WHEN VOLUME CHANGES"), "VolumePopup", true);
++		s->addSwitch(_("SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"), "VolumePopup", true);
+ 	}
+ 
+ 	s->addGroup(_("MUSIC"));
+diff --git a/es-core/CMakeLists.txt b/es-core/CMakeLists.txt
+index 1296fb396..996625e0c 100644
+--- a/es-core/CMakeLists.txt
++++ b/es-core/CMakeLists.txt
+@@ -80,6 +80,7 @@ set(CORE_HEADERS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VideoPlayerComponent.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VideoVlcComponent.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VolumeInfoComponent.h
++	${CMAKE_CURRENT_SOURCE_DIR}/src/components/BrightnessInfoComponent.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/MultiLineMenuEntry.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/ScrollbarComponent.h	
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/ComponentTab.h
+@@ -211,6 +212,7 @@ set(CORE_SOURCES
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VideoPlayerComponent.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VideoVlcComponent.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/VolumeInfoComponent.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/src/components/BrightnessInfoComponent.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/ScrollbarComponent.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/MultiLineMenuEntry.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/components/ComponentTab.cpp
+diff --git a/es-core/src/Window.cpp b/es-core/src/Window.cpp
+index 005d6d445..2613d387b 100644
+--- a/es-core/src/Window.cpp
++++ b/es-core/src/Window.cpp
+@@ -22,6 +22,7 @@
+ #include "components/BatteryIndicatorComponent.h"
+ #include "guis/GuiMsgBox.h"
+ #include "components/VolumeInfoComponent.h"
++#include "components/BrightnessInfoComponent.h"
+ #include "Splash.h"
+ #include "PowerSaver.h"
+ #include "renderers/Renderer.h"
+@@ -165,6 +166,11 @@ bool Window::init(bool initRenderer, bool initInputManager)
+ 	else
+ 		mVolumeInfo->reset();
+ 
++	if (mBrightnessInfo == nullptr)
++		mBrightnessInfo = std::make_shared<BrightnessInfoComponent>(this);
++	else
++		mBrightnessInfo->reset();
++
+ 	// update our help because font sizes probably changed
+ 	if (peekGui())
+ 		peekGui()->updateHelpPrompts();
+@@ -457,6 +463,9 @@ void Window::update(int deltaTime)
+ 	if (mVolumeInfo)
+ 		mVolumeInfo->update(deltaTime);
+ 
++	if (mBrightnessInfo)
++		mBrightnessInfo->update(deltaTime);
++
+ 	mFrameTimeElapsed += deltaTime;
+ 	mFrameCountElapsed++;
+ 	if (mFrameTimeElapsed > 500)
+@@ -790,6 +799,9 @@ void Window::render()
+ 	if (mVolumeInfo && Settings::VolumePopup())
+ 		mVolumeInfo->render(transform);
+ 
++	if (mBrightnessInfo && Settings::VolumePopup())
++		mBrightnessInfo->render(transform);
++
+ 	if (mTimeSinceLastInput >= screensaverTime && screensaverTime != 0)
+ 	{
+ 		if (mAllowSleep && (!mScreenSaver || mScreenSaver->allowSleep()))
+@@ -1311,6 +1323,7 @@ void Window::onThemeChanged(const std::shared_ptr<ThemeData>& theme)
+ 		mBatteryIndicator->applyTheme(theme, "screen", "batteryIndicator", ThemeFlags::ALL);
+ 	
+ 	mVolumeInfo = std::make_shared<VolumeInfoComponent>(this);
++	mBrightnessInfo = std::make_shared<BrightnessInfoComponent>(this);
+ }
+ 
+ void Window::setGunCalibrationState(bool isCalibrating)
+diff --git a/es-core/src/Window.h b/es-core/src/Window.h
+index 0baa30f17..a6765ddec 100644
+--- a/es-core/src/Window.h
++++ b/es-core/src/Window.h
+@@ -26,6 +26,7 @@ class ThemeData;
+ class TextComponent;
+ class ControllerActivityComponent;
+ class VolumeInfoComponent;
++class BrightnessInfoComponent;
+ class BatteryIndicatorComponent;
+ class Splash;
+ class IBindable;
+@@ -161,6 +162,7 @@ private:
+ 	std::shared_ptr<TextComponent>	mClock;
+ 	std::shared_ptr<ControllerActivityComponent>	mControllerActivity;
+ 	std::shared_ptr<VolumeInfoComponent> mVolumeInfo;
++	std::shared_ptr<BrightnessInfoComponent> mBrightnessInfo;
+ 	std::shared_ptr<BatteryIndicatorComponent>	mBatteryIndicator;	
+ 
+ 	bool mNormalizeNextUpdate;
+diff --git a/es-core/src/components/BrightnessInfoComponent.cpp b/es-core/src/components/BrightnessInfoComponent.cpp
+new file mode 100644
+index 000000000..9e8ec8a83
+--- /dev/null
++++ b/es-core/src/components/BrightnessInfoComponent.cpp
+@@ -0,0 +1,183 @@
++#include "BrightnessInfoComponent.h"
++#include "ThemeData.h"
++#include "PowerSaver.h"
++#include "components/ComponentGrid.h"
++#include "components/NinePatchComponent.h"
++#include "components/TextComponent.h"
++#include "components/ImageComponent.h"
++#include "utils/FileSystemUtil.h"
++#include "utils/StringUtil.h"
++#include "LocaleES.h"
++#include "Window.h"
++
++#define PADDING_PX			(Renderer::getScreenWidth()*0.006)
++#define PADDING_BAR			(Renderer::isSmallScreen() ? Renderer::getScreenWidth()*0.02 : Renderer::getScreenWidth()*0.006)
++
++#define VISIBLE_TIME		2650
++#define FADE_TIME			250
++#define CHECKBRIGHTNESSDELAY	40
++
++// Reads the current backlight brightness as a 0..100 percentage.
++// Returns -1 when no backlight is available (e.g. desktop builds) so the
++// overlay simply never triggers on such devices.
++static int readBrightnessPercent()
++{
++	static const std::string brightnessPath = "/sys/class/backlight/backlight/brightness";
++	static const std::string maxBrightnessPath = "/sys/class/backlight/backlight/max_brightness";
++
++	if (!Utils::FileSystem::exists(brightnessPath) || !Utils::FileSystem::exists(maxBrightnessPath))
++		return -1;
++
++	int max = Utils::String::toInteger(Utils::FileSystem::readAllText(maxBrightnessPath));
++	if (max <= 0)
++		return -1;
++
++	int value = Utils::String::toInteger(Utils::FileSystem::readAllText(brightnessPath));
++
++	int percent = (int)((value / (float)max) * 100.0f + 0.5f);
++	if (percent < 0)
++		percent = 0;
++	if (percent > 100)
++		percent = 100;
++
++	return percent;
++}
++
++BrightnessInfoComponent::BrightnessInfoComponent(Window* window, bool actionLine)
++	: GuiComponent(window)
++{
++	mDisplayTime = -1;
++	mBrightness = -1;
++	mCheckTime = 0;
++
++	auto theme = ThemeData::getMenuTheme();	
++
++	auto font = theme->TextSmall.font;
++	if (Renderer::isSmallScreen())
++		font = theme->Text.font;
++
++	Vector2f fullSize(
++		2 * PADDING_PX + font->sizeText("100%").x(),
++		2 * PADDING_PX + Renderer::getScreenHeight() * 0.20f);
++	
++	fullSize.y() = fullSize.x() * 2.5f;
++
++	setSize(fullSize);
++
++	mFrame = new NinePatchComponent(window);
++	mFrame->setImagePath(theme->Background.path);
++	mFrame->setEdgeColor(theme->Background.color);
++	mFrame->setCenterColor(theme->Background.centerColor);
++	mFrame->setCornerSize(theme->Background.cornerSize);
++	mFrame->setPostProcessShader(theme->Background.menuShader, false);
++	mFrame->fitTo(mSize, Vector3f::Zero(), Vector2f(-32, -32));
++	addChild(mFrame);
++
++	// Icon at the top of the overlay (tinted with the theme text color)
++	float iconSize = fullSize.x() - 2 * PADDING_PX - 2 * PADDING_BAR;
++	mIcon = new ImageComponent(mWindow);
++	mIcon->setImage(":/brightness.svg");
++	mIcon->setColorShift(theme->Text.color);
++	mIcon->setResize(iconSize, iconSize);
++	mIcon->setPosition(PADDING_PX + PADDING_BAR, PADDING_PX);
++	addChild(mIcon);
++
++	mLabel = new TextComponent(mWindow, "", font, theme->Text.color, ALIGN_CENTER);
++	
++	int h = font->sizeText("100%").y() + PADDING_PX;
++	mLabel->setPosition(0, fullSize.y() - h);
++	mLabel->setSize(fullSize.x(), h);
++	addChild(mLabel);
++
++	// FCA TopLeft
++	float posX = Renderer::getScreenWidth() * 0.02f;
++	float posY = Renderer::getScreenHeight() * 0.13f; //AmberELEC
++
++	setPosition(posX, posY, 0);
++}
++
++BrightnessInfoComponent::~BrightnessInfoComponent()
++{
++	delete mLabel;
++	delete mIcon;
++	delete mFrame;
++}
++
++void BrightnessInfoComponent::update(int deltaTime)
++{
++	GuiComponent::update(deltaTime);
++
++	if (mDisplayTime >= 0)
++	{
++		mDisplayTime += deltaTime;
++		if (mDisplayTime > VISIBLE_TIME + FADE_TIME)
++		{
++			mDisplayTime = -1;
++
++			if (isVisible())
++			{
++				setVisible(false);
++				PowerSaver::resume();
++			}
++		}
++	}
++
++	mCheckTime += deltaTime;
++	if (mCheckTime < CHECKBRIGHTNESSDELAY)
++		return;
++
++	mCheckTime = 0;
++
++	int brightness = readBrightnessPercent();
++	if (brightness < 0)
++		return;
++
++	if (brightness != mBrightness)
++	{
++		bool firstTime = (mBrightness < 0);
++
++		mBrightness = brightness;
++
++		mLabel->setText(std::to_string(mBrightness) + "%");
++
++		if (!firstTime)
++		{
++			mDisplayTime = 0;
++
++			if (!isVisible())
++			{
++				setVisible(true);
++				PowerSaver::pause();
++			}
++		}
++	}
++}
++
++void BrightnessInfoComponent::render(const Transform4x4f& parentTrans)
++{
++	if (!mVisible || mDisplayTime < 0)
++		return;
++
++	auto theme = ThemeData::getMenuTheme();
++
++	int opacity = 255 - Math::max(0, (mDisplayTime - VISIBLE_TIME) * 255 / FADE_TIME);
++	setOpacity(opacity);
++	setScale(opacity / 255.0f);
++
++	GuiComponent::render(parentTrans);
++
++	Transform4x4f trans = parentTrans * getTransform();
++	Renderer::setMatrix(trans);
++
++	float x = PADDING_PX + PADDING_BAR;
++	// leave room for the square icon at the top
++	float iconSize = getSize().x() - 2 * PADDING_PX - 2 * PADDING_BAR;
++	float y = PADDING_PX + iconSize + PADDING_PX;
++	float w = getSize().x() - 2 * PADDING_PX - 2 * PADDING_BAR;
++	float h = getSize().y() - mLabel->getSize().y() - PADDING_PX - y;
++	
++	Renderer::drawRect(x, y, w, h, (theme->Text.color & 0xFFFFFF00) | (opacity / 2));
++
++	float px = (h*mBrightness) / 100;
++	Renderer::drawRect(x, y + h - px, w, px, (theme->TextSmall.color & 0xFFFFFF00) | opacity);
++}
+diff --git a/es-core/src/components/BrightnessInfoComponent.h b/es-core/src/components/BrightnessInfoComponent.h
+new file mode 100644
+index 000000000..196461a4b
+--- /dev/null
++++ b/es-core/src/components/BrightnessInfoComponent.h
+@@ -0,0 +1,34 @@
++#pragma once
++
++#include <mutex>
++#include "GuiComponent.h"
++
++class ComponentGrid;
++class NinePatchComponent;
++class TextComponent;
++class ImageComponent;
++class Window;
++
++// Derived from VolumeInfoComponent: shows a popup overlay (with a brightness
++// icon on top) whenever the display backlight brightness changes.
++class BrightnessInfoComponent : public GuiComponent
++{
++public:
++	BrightnessInfoComponent(Window* window, bool actionLine = true);
++	~BrightnessInfoComponent();
++
++	void render(const Transform4x4f& parentTrans) override;
++	void update(int deltaTime) override;
++
++	void reset() { mBrightness = -1; }
++
++private:
++	NinePatchComponent* mFrame;
++	ImageComponent*		mIcon;
++	TextComponent*		mLabel;
++
++	int mBrightness;
++
++	int mCheckTime;
++	int mDisplayTime;
++};
+diff --git a/es-core/src/components/VolumeInfoComponent.cpp b/es-core/src/components/VolumeInfoComponent.cpp
+index afaaa295b..7589d2be3 100644
+--- a/es-core/src/components/VolumeInfoComponent.cpp
++++ b/es-core/src/components/VolumeInfoComponent.cpp
+@@ -4,6 +4,7 @@
+ #include "components/ComponentGrid.h"
+ #include "components/NinePatchComponent.h"
+ #include "components/TextComponent.h"
++#include "components/ImageComponent.h"
+ #include "LocaleES.h"
+ #include "VolumeControl.h"
+ #include "Window.h"
+@@ -45,6 +46,15 @@ VolumeInfoComponent::VolumeInfoComponent(Window* window, bool actionLine)
+ 	mFrame->fitTo(mSize, Vector3f::Zero(), Vector2f(-32, -32));
+ 	addChild(mFrame);
+ 
++	// Icon at the top of the overlay (tinted with the theme text color)
++	float iconSize = fullSize.x() - 2 * PADDING_PX - 2 * PADDING_BAR;
++	mIcon = new ImageComponent(mWindow);
++	mIcon->setImage(":/volume.svg");
++	mIcon->setColorShift(theme->Text.color);
++	mIcon->setResize(iconSize, iconSize);
++	mIcon->setPosition(PADDING_PX + PADDING_BAR, PADDING_PX);
++	addChild(mIcon);
++
+ 	mLabel = new TextComponent(mWindow, "", font, theme->Text.color, ALIGN_CENTER);
+ 	
+ 	int h = font->sizeText("100%").y() + PADDING_PX;
+@@ -62,6 +72,7 @@ VolumeInfoComponent::VolumeInfoComponent(Window* window, bool actionLine)
+ VolumeInfoComponent::~VolumeInfoComponent()
+ {
+ 	delete mLabel;
++	delete mIcon;
+ 	delete mFrame;
+ }
+ 
+@@ -132,9 +143,11 @@ void VolumeInfoComponent::render(const Transform4x4f& parentTrans)
+ 	Renderer::setMatrix(trans);
+ 
+ 	float x = PADDING_PX + PADDING_BAR;
+-	float y = PADDING_PX * 2;
++	// leave room for the square icon at the top
++	float iconSize = getSize().x() - 2 * PADDING_PX - 2 * PADDING_BAR;
++	float y = PADDING_PX + iconSize + PADDING_PX;
+ 	float w = getSize().x() - 2 * PADDING_PX - 2 * PADDING_BAR;
+-	float h = getSize().y() - mLabel->getSize().y() - PADDING_PX - PADDING_PX;
++	float h = getSize().y() - mLabel->getSize().y() - PADDING_PX - y;
+ 	
+ 	Renderer::drawRect(x, y, w, h, (theme->Text.color & 0xFFFFFF00) | (opacity / 2));
+ 
+diff --git a/es-core/src/components/VolumeInfoComponent.h b/es-core/src/components/VolumeInfoComponent.h
+index 473b43689..78eb35bde 100644
+--- a/es-core/src/components/VolumeInfoComponent.h
++++ b/es-core/src/components/VolumeInfoComponent.h
+@@ -6,6 +6,7 @@
+ class ComponentGrid;
+ class NinePatchComponent;
+ class TextComponent;
++class ImageComponent;
+ class Window;
+ 
+ class VolumeInfoComponent : public GuiComponent
+@@ -21,6 +22,7 @@ public:
+ 
+ private:
+ 	NinePatchComponent* mFrame;
++	ImageComponent*		mIcon;
+ 	TextComponent*		mLabel;
+ 
+ 	int mVolume;
+diff --git a/locale/lang/ar/LC_MESSAGES/emulationstation2.po b/locale/lang/ar/LC_MESSAGES/emulationstation2.po
+index 5a815be3b..3e0bd4823 100644
+--- a/locale/lang/ar/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ar/LC_MESSAGES/emulationstation2.po
+@@ -1955,8 +1955,8 @@ msgstr "مستوى صوت النظام"
+ msgid "MUSIC VOLUME"
+ msgstr "مستوى صوت الموسيقى"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "عرض المستوى عند تغيير مستوى الصوت"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "عرض المستوى عند تغيير مستوى الصوت أو السطوع"
+ 
+ msgid "MUSIC"
+ msgstr "الموسيقى"
+diff --git a/locale/lang/ca/LC_MESSAGES/emulationstation2.po b/locale/lang/ca/LC_MESSAGES/emulationstation2.po
+index 28817d5f6..bf4c2118a 100644
+--- a/locale/lang/ca/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ca/LC_MESSAGES/emulationstation2.po
+@@ -1950,8 +1950,8 @@ msgstr "VOLUM DEL SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUM DE LA MÚSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "MOSTRAR SUPERPOSICIÓ AL CANVIAR EL VOLUM"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "MOSTRAR SUPERPOSICIÓ AL CANVIAR EL VOLUM O LA LLUMINOSITAT"
+ 
+ msgid "MUSIC"
+ msgstr "MÚSICA"
+diff --git a/locale/lang/cs_CZ/LC_MESSAGES/emulationstation2.po b/locale/lang/cs_CZ/LC_MESSAGES/emulationstation2.po
+index b07db23de..15a583feb 100644
+--- a/locale/lang/cs_CZ/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/cs_CZ/LC_MESSAGES/emulationstation2.po
+@@ -1932,8 +1932,8 @@ msgstr "HLASITOST SYSTÉMU"
+ msgid "MUSIC VOLUME"
+ msgstr "HLASITOST HUDBY"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "ZOBRAZIT PŘEKRYTÍ PŘI ZMĚNĚ HLASITOSTI"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ZOBRAZIT PŘEKRYTÍ PŘI ZMĚNĚ HLASITOSTI NEBO JASU"
+ 
+ msgid "MUSIC"
+ msgstr "HUDBA"
+diff --git a/locale/lang/cy_GB/LC_MESSAGES/emulationstation2.po b/locale/lang/cy_GB/LC_MESSAGES/emulationstation2.po
+index 0bbc56941..6c3447efb 100644
+--- a/locale/lang/cy_GB/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/cy_GB/LC_MESSAGES/emulationstation2.po
+@@ -1903,8 +1903,8 @@ msgstr "LEFEL SAIN SYSTEM"
+ msgid "MUSIC VOLUME"
+ msgstr "LEFEL SAIN CERDDORIAETH"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "DANGOS TROSHAEN PAN MAE LEFEL SAIN YN NEWID"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "DANGOS TROSHAEN PAN MAE LEFEL SAIN NEU DISGLEIRDEB YN NEWID"
+ 
+ msgid "MUSIC"
+ msgstr "CERDDORIAETH"
+diff --git a/locale/lang/de/LC_MESSAGES/emulationstation2.po b/locale/lang/de/LC_MESSAGES/emulationstation2.po
+index 0e3237bb6..0c7ae2336 100644
+--- a/locale/lang/de/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/de/LC_MESSAGES/emulationstation2.po
+@@ -1954,8 +1954,8 @@ msgstr "SYSTEMLAUTSTÄRKE"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIKLAUTSTÄRKE"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "OVERLAY BEI ÄNDERUNG DER LAUTSTÄRKE ANZEIGEN"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "OVERLAY BEI ÄNDERUNG DER LAUTSTÄRKE ODER HELLIGKEIT ANZEIGEN"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIK"
+diff --git a/locale/lang/el/LC_MESSAGES/emulationstation2.po b/locale/lang/el/LC_MESSAGES/emulationstation2.po
+index e1f24a53d..4b7be236f 100644
+--- a/locale/lang/el/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/el/LC_MESSAGES/emulationstation2.po
+@@ -1921,8 +1921,8 @@ msgstr "ΕΝΤΑΣΗ ΣΥΣΤΗΜΑΤΟΣ"
+ msgid "MUSIC VOLUME"
+ msgstr "ΕΝΤΑΣΗ ΜΟΥΣΙΚΗΣ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "ΕΜΦΑΝΙΣΗ ΕΝΔΕΙΞΗΣ ΟΤΑΝ ΑΛΛΑΖΕΙ Η ΕΝΤΑΣΗ"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ΕΜΦΑΝΙΣΗ ΕΝΔΕΙΞΗΣ ΟΤΑΝ ΑΛΛΑΖΕΙ Η ΕΝΤΑΣΗ Ή Η ΦΩΤΕΙΝΟΤΗΤΑ"
+ 
+ msgid "MUSIC"
+ msgstr "ΜΟΥΣΙΚΗ"
+diff --git a/locale/lang/en_GB/LC_MESSAGES/emulationstation2.po b/locale/lang/en_GB/LC_MESSAGES/emulationstation2.po
+index d5bc7ceee..bf41ccc48 100644
+--- a/locale/lang/en_GB/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/en_GB/LC_MESSAGES/emulationstation2.po
+@@ -1924,8 +1924,8 @@ msgstr "SYSTEM VOLUME"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIC VOLUME"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "SHOW OVERLAY WHEN VOLUME CHANGES"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIC"
+diff --git a/locale/lang/es/LC_MESSAGES/emulationstation2.po b/locale/lang/es/LC_MESSAGES/emulationstation2.po
+index 7360edae8..c909a57f5 100644
+--- a/locale/lang/es/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/es/LC_MESSAGES/emulationstation2.po
+@@ -1956,8 +1956,8 @@ msgstr "VOLUMEN DEL SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUMEN DE LA MÚSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "MOSTRAR BARRA DE VOLUMEN AL CAMBIAR EL VOLUMEN"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "MOSTRAR BARRA AL CAMBIAR EL VOLUMEN O EL BRILLO"
+ 
+ msgid "MUSIC"
+ msgstr "MÚSICA"
+diff --git a/locale/lang/es_MX/LC_MESSAGES/emulationstation2.po b/locale/lang/es_MX/LC_MESSAGES/emulationstation2.po
+index 0782e2f11..a14c2ba42 100644
+--- a/locale/lang/es_MX/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/es_MX/LC_MESSAGES/emulationstation2.po
+@@ -1944,8 +1944,8 @@ msgstr "VOLUMEN DEL SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUMEN DE LA MÚSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "MOSTRAR LA BARRA DE VOLUMEN AL CAMBIAR EL VOLUMEN"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "MOSTRAR LA BARRA AL CAMBIAR EL VOLUMEN O EL BRILLO"
+ 
+ msgid "MUSIC"
+ msgstr "MÚSICA"
+diff --git a/locale/lang/eu_ES/LC_MESSAGES/emulationstation2.po b/locale/lang/eu_ES/LC_MESSAGES/emulationstation2.po
+index e7f8841d9..f15f57bef 100644
+--- a/locale/lang/eu_ES/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/eu_ES/LC_MESSAGES/emulationstation2.po
+@@ -1937,8 +1937,8 @@ msgstr "SISTEMAREN BOLUMENA"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIKAREN BOLUMENA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "ERAKUTSI KAPA BOLUMENA ALDATZEN DENEAN"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ERAKUTSI KAPA BOLUMENA EDO DISTIRA ALDATZEN DENEAN"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIKA"
+diff --git a/locale/lang/fi_FI/LC_MESSAGES/emulationstation2.po b/locale/lang/fi_FI/LC_MESSAGES/emulationstation2.po
+index 5f50296e9..070ceb89b 100644
+--- a/locale/lang/fi_FI/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/fi_FI/LC_MESSAGES/emulationstation2.po
+@@ -1928,8 +1928,8 @@ msgstr "JÄRJESTELMÄN ÄÄNENVOIMAKKUUS"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIIKIN ÄÄNENVOIMAKKUUS"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr ""
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "NÄYTÄ PEITE, KUN ÄÄNENVOIMAKKUUS TAI KIRKKAUS MUUTTUU"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIIKKI"
+diff --git a/locale/lang/fr/LC_MESSAGES/emulationstation2.po b/locale/lang/fr/LC_MESSAGES/emulationstation2.po
+index 9bbf5808a..4a5a8f023 100644
+--- a/locale/lang/fr/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/fr/LC_MESSAGES/emulationstation2.po
+@@ -1944,8 +1944,8 @@ msgstr "VOLUME GÉNÉRAL"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME DE LA MUSIQUE"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "NOTIFIER LE CHANGEMENT DU VOLUME"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "NOTIFIER LE CHANGEMENT DU VOLUME OU DE LA LUMINOSITÉ"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIQUE"
+diff --git a/locale/lang/gl_ES/LC_MESSAGES/emulationstation2.po b/locale/lang/gl_ES/LC_MESSAGES/emulationstation2.po
+index 438fe7cfe..0230cd5c2 100644
+--- a/locale/lang/gl_ES/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/gl_ES/LC_MESSAGES/emulationstation2.po
+@@ -1952,8 +1952,8 @@ msgstr "VOLUME DO SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME DA MUSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "AMOSAR BARRA VOLUME CANDO CAMBIA O VOLUME"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "AMOSAR BARRA CANDO CAMBIA O VOLUME OU O BRILLO"
+ 
+ msgid "MUSIC"
+ msgstr "MUSICA"
+diff --git a/locale/lang/he/LC_MESSAGES/emulationstation2.po b/locale/lang/he/LC_MESSAGES/emulationstation2.po
+index 566c5dfa8..d4d26fae0 100644
+--- a/locale/lang/he/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/he/LC_MESSAGES/emulationstation2.po
+@@ -1901,8 +1901,8 @@ msgstr "עוצמת שמע של מערכת"
+ msgid "MUSIC VOLUME"
+ msgstr "עוצמת שמע של מוזיקה"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "הצגת OVERLAY בשינוי עוצמת שמע"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "הצגת OVERLAY בשינוי עוצמת שמע או בהירות"
+ 
+ msgid "MUSIC"
+ msgstr "מוזיקה"
+diff --git a/locale/lang/hu/LC_MESSAGES/emulationstation2.po b/locale/lang/hu/LC_MESSAGES/emulationstation2.po
+index 6b23691a9..f5d29297f 100644
+--- a/locale/lang/hu/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/hu/LC_MESSAGES/emulationstation2.po
+@@ -1950,8 +1950,8 @@ msgstr "RENDSZER HANGERŐ"
+ msgid "MUSIC VOLUME"
+ msgstr "ZENE HANGERŐ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "HANGERŐ VÁLTOZTATÁSAKOR A CSÚSZKA MUTATÁSA"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "HANGERŐ VAGY FÉNYERŐ VÁLTOZTATÁSAKOR A CSÚSZKA MUTATÁSA"
+ 
+ msgid "MUSIC"
+ msgstr "ZENE"
+diff --git a/locale/lang/id_ID/LC_MESSAGES/emulationstation2.po b/locale/lang/id_ID/LC_MESSAGES/emulationstation2.po
+index 6de1bb11e..e06cb9509 100644
+--- a/locale/lang/id_ID/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/id_ID/LC_MESSAGES/emulationstation2.po
+@@ -1933,8 +1933,8 @@ msgstr "VOLUME SISTEM"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME MUSIK"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "TAMPILKAN OVERLAY SAAT VOLUME BERUBAH"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "TAMPILKAN OVERLAY SAAT VOLUME ATAU KECERAHAN BERUBAH"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIK"
+diff --git a/locale/lang/it/LC_MESSAGES/emulationstation2.po b/locale/lang/it/LC_MESSAGES/emulationstation2.po
+index 68e0477c8..aff0964e1 100644
+--- a/locale/lang/it/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/it/LC_MESSAGES/emulationstation2.po
+@@ -1936,8 +1936,8 @@ msgstr "VOLUME DI SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME MUSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "INTERFACCIA DURANTE IL CAMBIO VOLUME"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "INTERFACCIA DURANTE IL CAMBIO VOLUME O LUMINOSITÀ"
+ 
+ msgid "MUSIC"
+ msgstr "MUSICA"
+diff --git a/locale/lang/ja_JP/LC_MESSAGES/emulationstation2.po b/locale/lang/ja_JP/LC_MESSAGES/emulationstation2.po
+index 192b1d11b..daed35d34 100644
+--- a/locale/lang/ja_JP/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ja_JP/LC_MESSAGES/emulationstation2.po
+@@ -1934,8 +1934,8 @@ msgstr "メイン音量"
+ msgid "MUSIC VOLUME"
+ msgstr "ES-BGM音量"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "音量変更を画面に表示"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "音量・輝度の変更を画面に表示"
+ 
+ msgid "MUSIC"
+ msgstr "音楽"
+diff --git a/locale/lang/ko/LC_MESSAGES/emulationstation2.po b/locale/lang/ko/LC_MESSAGES/emulationstation2.po
+index 2578c4691..cc5676083 100644
+--- a/locale/lang/ko/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ko/LC_MESSAGES/emulationstation2.po
+@@ -1922,8 +1922,8 @@ msgstr "시스템 볼륨"
+ msgid "MUSIC VOLUME"
+ msgstr "음악 볼륨"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "볼륨 변경 시 오버레이 표시"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "볼륨 또는 밝기 변경 시 오버레이 표시"
+ 
+ msgid "MUSIC"
+ msgstr "음악"
+diff --git a/locale/lang/nb_NO/LC_MESSAGES/emulationstation2.po b/locale/lang/nb_NO/LC_MESSAGES/emulationstation2.po
+index 4c48c4080..ede9eedd9 100644
+--- a/locale/lang/nb_NO/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/nb_NO/LC_MESSAGES/emulationstation2.po
+@@ -1931,8 +1931,8 @@ msgstr "SYSTEM VOLUM"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIKK VOLUM"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "VIS OVERLEGG NÅR VOLUMET ENDRES"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "VIS OVERLEGG NÅR VOLUMET ELLER LYSSTYRKEN ENDRES"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIKK"
+diff --git a/locale/lang/nl/LC_MESSAGES/emulationstation2.po b/locale/lang/nl/LC_MESSAGES/emulationstation2.po
+index 552ff71f2..be8f4bb4c 100644
+--- a/locale/lang/nl/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/nl/LC_MESSAGES/emulationstation2.po
+@@ -1955,8 +1955,8 @@ msgstr "SYSTEEMVOLUME"
+ msgid "MUSIC VOLUME"
+ msgstr "MUZIEK VOLUME"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "TOON OVERLAY ALS VOLUME VERANDERT"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "TOON OVERLAY ALS VOLUME OF HELDERHEID VERANDERT"
+ 
+ msgid "MUSIC"
+ msgstr "MUZIEK"
+diff --git a/locale/lang/nn_NO/LC_MESSAGES/emulationstation2.po b/locale/lang/nn_NO/LC_MESSAGES/emulationstation2.po
+index 82d4ca614..71f3d3c16 100644
+--- a/locale/lang/nn_NO/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/nn_NO/LC_MESSAGES/emulationstation2.po
+@@ -1895,8 +1895,8 @@ msgstr "SYSTEM VOLUM"
+ msgid "MUSIC VOLUME"
+ msgstr ""
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr ""
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "VIS OVERLEGG NÅR VOLUMET ELLER LYSSTYRKEN ENDRAST"
+ 
+ msgid "MUSIC"
+ msgstr ""
+diff --git a/locale/lang/oc_FR/LC_MESSAGES/emulationstation2.po b/locale/lang/oc_FR/LC_MESSAGES/emulationstation2.po
+index 48b3a0448..bb0605a9e 100644
+--- a/locale/lang/oc_FR/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/oc_FR/LC_MESSAGES/emulationstation2.po
+@@ -1905,8 +1905,8 @@ msgstr "VOLUM SISTÈMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUM MUSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr ""
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "AFICHAR LA NOTIFICACION QUAND LO VOLUM O LA LUMINOSITAT CAMBIA"
+ 
+ msgid "MUSIC"
+ msgstr "MUSICA"
+diff --git a/locale/lang/pl/LC_MESSAGES/emulationstation2.po b/locale/lang/pl/LC_MESSAGES/emulationstation2.po
+index 79bff6f6a..e830e3ee4 100644
+--- a/locale/lang/pl/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/pl/LC_MESSAGES/emulationstation2.po
+@@ -1944,8 +1944,8 @@ msgstr "GŁOŚNOŚĆ SYSTEMOWA"
+ msgid "MUSIC VOLUME"
+ msgstr "GŁOŚNOŚĆ MUZYKI"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "POKAŻ NAKŁADKĘ PODCZAS ZMIANY GŁOŚNOŚCI"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "POKAŻ NAKŁADKĘ PODCZAS ZMIANY GŁOŚNOŚCI LUB JASNOŚCI"
+ 
+ msgid "MUSIC"
+ msgstr "MUZYKA"
+diff --git a/locale/lang/pt_BR/LC_MESSAGES/emulationstation2.po b/locale/lang/pt_BR/LC_MESSAGES/emulationstation2.po
+index 1dd0e8719..b77f91b13 100644
+--- a/locale/lang/pt_BR/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/pt_BR/LC_MESSAGES/emulationstation2.po
+@@ -1951,8 +1951,8 @@ msgstr "VOLUME DO SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME DA MÚSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "EXIBIR INDICADOR VISUAL AO AJUSTAR O VOLUME"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "EXIBIR INDICADOR VISUAL AO AJUSTAR O VOLUME OU O BRILHO"
+ 
+ msgid "MUSIC"
+ msgstr "MÚSICA"
+diff --git a/locale/lang/pt_PT/LC_MESSAGES/emulationstation2.po b/locale/lang/pt_PT/LC_MESSAGES/emulationstation2.po
+index 93063de61..dc12c02a3 100644
+--- a/locale/lang/pt_PT/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/pt_PT/LC_MESSAGES/emulationstation2.po
+@@ -1943,8 +1943,8 @@ msgstr "VOLUME DO SISTEMA"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUME DA MÚSICA"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "MOSTRAR INDICADOR QUANDO MUDAR O VOLUME"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "MOSTRAR INDICADOR QUANDO MUDAR O VOLUME OU O BRILHO"
+ 
+ msgid "MUSIC"
+ msgstr "MÚSICA"
+diff --git a/locale/lang/ro_RO/LC_MESSAGES/emulationstation2.po b/locale/lang/ro_RO/LC_MESSAGES/emulationstation2.po
+index fc6055545..051b066c7 100644
+--- a/locale/lang/ro_RO/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ro_RO/LC_MESSAGES/emulationstation2.po
+@@ -1951,8 +1951,8 @@ msgstr "VOLUM SISTEM"
+ msgid "MUSIC VOLUME"
+ msgstr "VOLUM MUZICĂ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "ARATĂ PE ECRAN CÂND VOLUMUL SE MODIFICĂ"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ARATĂ PE ECRAN CÂND VOLUMUL SAU LUMINOZITATEA SE MODIFICĂ"
+ 
+ msgid "MUSIC"
+ msgstr "MUZICĂ"
+diff --git a/locale/lang/ru_RU/LC_MESSAGES/emulationstation2.po b/locale/lang/ru_RU/LC_MESSAGES/emulationstation2.po
+index 82462aab4..a297f9ccc 100644
+--- a/locale/lang/ru_RU/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/ru_RU/LC_MESSAGES/emulationstation2.po
+@@ -1933,8 +1933,8 @@ msgstr "ГРОМКОСТЬ СИСТЕМЫ"
+ msgid "MUSIC VOLUME"
+ msgstr "ГРОМКОСТЬ МУЗЫКИ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "ПОКАЗАТЬ ОВЕРЛЕЙ ПРИ ИЗМ. ГРОМКОСТИ"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ПОКАЗАТЬ ОВЕРЛЕЙ ПРИ ИЗМ. ГРОМКОСТИ ИЛИ ЯРКОСТИ"
+ 
+ msgid "MUSIC"
+ msgstr "МУЗЫКА"
+diff --git a/locale/lang/sk_SK/LC_MESSAGES/emulationstation2.po b/locale/lang/sk_SK/LC_MESSAGES/emulationstation2.po
+index 978814775..974bc9e85 100644
+--- a/locale/lang/sk_SK/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/sk_SK/LC_MESSAGES/emulationstation2.po
+@@ -1933,8 +1933,8 @@ msgstr "Systémová hlasitosť"
+ msgid "MUSIC VOLUME"
+ msgstr "Hlasitosť hudby"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "Zobraziť prekrytie pri zmene hlasitosti"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "Zobraziť prekrytie pri zmene hlasitosti alebo jasu"
+ 
+ msgid "MUSIC"
+ msgstr "Hudba"
+diff --git a/locale/lang/sv_SE/LC_MESSAGES/emulationstation2.po b/locale/lang/sv_SE/LC_MESSAGES/emulationstation2.po
+index 58b8daeba..933cd2e90 100644
+--- a/locale/lang/sv_SE/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/sv_SE/LC_MESSAGES/emulationstation2.po
+@@ -1933,8 +1933,8 @@ msgstr "SYSTEMVOLYM"
+ msgid "MUSIC VOLUME"
+ msgstr "MUSIKVOLYM"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "VISA OVERLAY NÄR VOLYMEN ÄNDRAS"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "VISA OVERLAY NÄR VOLYMEN ELLER LJUSSTYRKAN ÄNDRAS"
+ 
+ msgid "MUSIC"
+ msgstr "MUSIK"
+diff --git a/locale/lang/tr/LC_MESSAGES/emulationstation2.po b/locale/lang/tr/LC_MESSAGES/emulationstation2.po
+index e2391de6f..758a4643d 100644
+--- a/locale/lang/tr/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/tr/LC_MESSAGES/emulationstation2.po
+@@ -1938,8 +1938,8 @@ msgstr "SİSTEM SESİ"
+ msgid "MUSIC VOLUME"
+ msgstr "MÜZİK SESİ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "SES DEĞİŞTİĞİNDE EKRANDA GÖRÜNTÜLE"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "SES VEYA PARLAKLIK DEĞİŞTİĞİNDE EKRANDA GÖRÜNTÜLE"
+ 
+ msgid "MUSIC"
+ msgstr "MÜZİK"
+diff --git a/locale/lang/uk_UA/LC_MESSAGES/emulationstation2.po b/locale/lang/uk_UA/LC_MESSAGES/emulationstation2.po
+index df1c58fc7..13582ea53 100644
+--- a/locale/lang/uk_UA/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/uk_UA/LC_MESSAGES/emulationstation2.po
+@@ -1905,8 +1905,8 @@ msgstr "ГУЧНІСТЬ СИСТЕМИ"
+ msgid "MUSIC VOLUME"
+ msgstr "ГУЧНІСТЬ МУЗИКИ"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr ""
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "ПОКАЗУВАТИ ОВЕРЛЕЙ ПРИ ЗМІНІ ГУЧНОСТІ АБО ЯСКРАВОСТІ"
+ 
+ msgid "MUSIC"
+ msgstr "МУЗИКА"
+diff --git a/locale/lang/vi_VN/LC_MESSAGES/emulationstation2.po b/locale/lang/vi_VN/LC_MESSAGES/emulationstation2.po
+index 8ba2e79e9..c533f373c 100644
+--- a/locale/lang/vi_VN/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/vi_VN/LC_MESSAGES/emulationstation2.po
+@@ -1941,8 +1941,8 @@ msgstr "ÂM LƯỢNG HỆ THỐNG"
+ msgid "MUSIC VOLUME"
+ msgstr "ÂM LƯỢNG NHẠC"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "HIỂN THỊ LỚP PHỦ KHI ÂM LƯỢNG THAY ĐỔI"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "HIỂN THỊ LỚP PHỦ KHI ÂM LƯỢNG HOẶC ĐỘ SÁNG THAY ĐỔI"
+ 
+ msgid "MUSIC"
+ msgstr "NHẠC"
+diff --git a/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po b/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po
+index 17e555f47..a6a0e1bac 100644
+--- a/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po
+@@ -1908,8 +1908,8 @@ msgstr "系统音量"
+ msgid "MUSIC VOLUME"
+ msgstr "音乐音量"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "音量变化时屏幕提示"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "音量或亮度变化时屏幕提示"
+ 
+ msgid "MUSIC"
+ msgstr "音乐"
+diff --git a/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po b/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po
+index 0447817d2..cfa643ffd 100644
+--- a/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po
+@@ -1909,8 +1909,8 @@ msgstr "系統音量"
+ msgid "MUSIC VOLUME"
+ msgstr "音樂音量"
+ 
+-msgid "SHOW OVERLAY WHEN VOLUME CHANGES"
+-msgstr "調整音量時在螢幕顯示"
++msgid "SHOW OVERLAY WHEN VOLUME OR BRIGHTNESS CHANGES"
++msgstr "調整音量或亮度時在螢幕顯示"
+ 
+ msgid "MUSIC"
+ msgstr "音樂"
+diff --git a/resources/brightness.svg b/resources/brightness.svg
+new file mode 100644
+index 000000000..d1110949a
+--- /dev/null
++++ b/resources/brightness.svg
+@@ -0,0 +1,3 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
++  <path d="M12 9c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3m0-2c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
++</svg>
+diff --git a/resources/volume.svg b/resources/volume.svg
+new file mode 100644
+index 000000000..35805e829
+--- /dev/null
++++ b/resources/volume.svg
+@@ -0,0 +1,5 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
++  <path d="M3 9v6h4l5 5V4L7 9H3z"/>
++  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
++  <path d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
++</svg>
