@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-import datetime
 import os
 import shlex
 import subprocess
 import sys
 import signal
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from time import perf_counter
 from typing import TYPE_CHECKING, Optional
 
 from setsettings import set_settings
@@ -21,7 +20,13 @@ if TYPE_CHECKING:
 LOGS_DIR = Path('/tmp/logs')
 RA_TEMP_CONF = '/storage/.config/retroarch/retroarch.cfg'
 RA_APPEND_CONF = '/tmp/raappend.cfg'
+EE_SETTING_CONF = '/storage/.config/distribution/configs/distribution.conf'
 log_path = LOGS_DIR / 'exec.log'
+
+ENABLE_SCREENSAVER = False
+ENABLE_SANITY_CHECK = False
+
+EE_DICTIONARY = None
 
 def call_profile_func(function_name: str, *args: str) -> str:
 	#We are going to want to call some stuff from /etc/profile, they are defined in ../profile.d/99-distribution.conf
@@ -43,17 +48,69 @@ def jslisten_set(*exe_names: str):
 	proc = subprocess.run(f'. /etc/profile && jslisten set {shlex.join(exe_names)} &', shell=True,   stdout=subprocess.PIPE, check=True, text=True)
 	return proc.stdout.strip('\n')
 
+def _process_running(name: str) -> bool:
+	#Cheap /proc scan; avoids spawning pgrep/systemctl just to probe. Read bytes since comm may hold non-UTF-8
+	target = name.encode()
+	for pid in os.listdir('/proc'):
+		if not pid.isdigit():
+			continue
+		try:
+			with open(f'/proc/{pid}/comm', 'rb') as f:
+				if f.read().rstrip(b'\n') == target:
+					return True
+		except OSError:
+			continue
+	return False
+
 def jslisten_stop():
-	#call_profile_func('jslisten', 'stop')
-	subprocess.check_call(['systemctl', 'stop', 'jslisten'])
+	#The systemctl/D-Bus round-trip costs ~150ms even for a no-op stop, so skip it entirely unless jslisten is actually running
+	if _process_running('jslisten'):
+		subprocess.check_call(['systemctl', 'stop', 'jslisten'])
+
+def get_settings_dict(settings_file: str):
+	sdict = {}
+	rex = re.compile('^([^=]+)=([^#\n]+)')
+	for line in open(settings_file):
+		match = rex.match(line)
+		if match:
+			sdict[match.group(1)] = match.group(2)
+	return sdict
 
 def get_elec_setting(setting_name, platform=None, rom=None):
 	#From distribution.conf
-	#Potentially this can be reimplemented in Python if that turns out to be a good idea
-	return call_profile_func('get_ee_setting', setting_name, platform, rom)
+	global EE_DICTIONARY
+	slist = []
+	if rom:
+		slist.append(platform + rom + '.' + setting_name)
+	if platform:
+		slist.append(platform + '.' + setting_name)
+	slist.append('global.' + setting_name)
+	slist.append(setting_name)
+	if not EE_DICTIONARY: EE_DICTIONARY = get_settings_dict(settings_file=EE_SETTING_CONF)
+	for setting in (slist):
+		if setting in EE_DICTIONARY:
+			return EE_DICTIONARY[setting]
+	return None
+
+def set_elec_settings(items):
+	#Apply multiple settings in a single read-modify-write pass (shell set_ee_setting semantics per item)
+	global EE_DICTIONARY
+	prefixes = [name + '=' for name, _ in items]
+	try:
+		with open(EE_SETTING_CONF, 'rt', encoding='utf-8') as f:
+			lines = [line for line in f if not any(prefix in line for prefix in prefixes)]
+	except FileNotFoundError:
+		lines = []
+	appends = [f'{name}={value}\n' for name, value in items if value != 'disable']
+	if appends and lines and not lines[-1].endswith('\n'):
+		lines[-1] += '\n'
+	lines.extend(appends)
+	with open(EE_SETTING_CONF, 'wt', encoding='utf-8') as f:
+		f.writelines(lines)
+	EE_DICTIONARY = None  #Force re-read so cached reads see the change
 
 def set_elec_setting(setting_name, value):
-	call_profile_func('set_ee_setting', setting_name, value)
+	set_elec_settings([(setting_name, value)])
 
 def check_bios(platform, core, emulator, game, log_path_):
 	call_profile_func('ee_check_bios', platform, core, emulator, game, log_path_)
@@ -180,17 +237,19 @@ class EmuRunner():
 	def toggle_max_performance(self) -> None:
 		if get_elec_setting('maxperf', self.platform, self.rom.name if self.rom else None) == '1':
 			if log_level == 'debug':
-				log('Enabling performance mode as requested')
+					log('Enabling performance mode as requested')
 			call_profile_func('performance', self.platform, self.rom.name if self.rom else "")
 		elif get_elec_setting('powersave', self.platform, self.rom.name if self.rom else None) == '1':
 			if log_level == 'debug':
-				log('Enabling powersave mode as requested')
+					log('Enabling powersave mode as requested')
 			call_profile_func('powersave', self.platform, self.rom.name if self.rom else "")
 		elif get_elec_setting('customperf', self.platform, self.rom.name if self.rom else None) == '1':
 			if log_level == 'debug':
-				log('Enabling custom performance mode as requested')
+					log('Enabling custom performance mode as requested')
 			call_profile_func('custom_performance', self.platform, self.rom.name if self.rom else "")
 		else:
+			if log_level == 'debug':
+					log('Enabling ondemand performance mode')
 			call_profile_func('ondemand', self.platform, self.rom.name if self.rom else "")
 
 	def set_settings(self) -> str:
@@ -288,8 +347,7 @@ class EmuRunner():
 			if not netplay_nick:
 				netplay_nick = 'AmberELEC'
 			if 'connect' in self.args:
-				set_elec_setting('netplay.client.port', self.args['port'])
-				set_elec_setting('netplay.client.ip', self.args['connect']) #We should now have parsed that properly so it's just a hostname/IP address, no --port argument
+				set_elec_settings([('netplay.client.port', self.args['port']), ('netplay.client.ip', self.args['connect'])]) #parsed to a plain hostname/IP, no --port argument
 				command += ['--connect', self.args['connect'] + '|' + self.args['port']]
 			if 'host' in self.args:
 				command += ['--host', self.args['host']]
@@ -370,7 +428,7 @@ class EmuRunner():
 			log(f'Executing {command}')
 		with log_path.open('at', encoding='utf-8') as log_file:
 			result = subprocess.run(command, stdout=log_file, stderr=subprocess.STDOUT, text=True, env=self.environment)
-			if (result.returncode != 0):
+			if ENABLE_SANITY_CHECK and result.returncode != 0:
 				sanity_log()
 
 	def cleanup_temp_files(self) -> None:
@@ -378,7 +436,6 @@ class EmuRunner():
 			temp_file.unlink(missing_ok=True)
 
 def main():
-	time_started = perf_counter()
 
 	i = 0
 	args: dict[str, str] = {}
@@ -402,7 +459,6 @@ def main():
 	LOGS_DIR.mkdir(parents=True, exist_ok=True)
 	log_path.touch()
 
-	log(f'Emulation run log: Started at {datetime.datetime.now()}')
 	log(f'Args: {args}')
 
 	runner = EmuRunner(rom, platform, emulator, core, args)
@@ -411,25 +467,24 @@ def main():
 	runner.toggle_max_performance()
 
 	#Disable netplay by default
-	set_elec_setting('netplay.client.ip', 'disable')
-	set_elec_setting('netplay.client.port', 'disable')
+	set_elec_settings([('netplay.client.ip', 'disable'), ('netplay.client.port', 'disable')])
 
 	jslisten_stop()
 
-	ss_command = ['/usr/bin/screensaver.sh', platform, rom]
+	screensaver = None
 
-	try:
-		screensaver = subprocess.Popen(ss_command, stdout=subprocess.PIPE, preexec_fn=os.setsid)
-	except:
-		pass
+	if ENABLE_SCREENSAVER:
+		try:
+			screensaver = subprocess.Popen(['/usr/bin/screensaver.sh', platform, rom], stdout=subprocess.PIPE, preexec_fn=os.setsid)
+		except:
+			pass
 
 	shader_arg = runner.set_settings()
 	command = runner.get_command(shader_arg)
-	if log_level != 'minimal':
-		log(f'Took {perf_counter() - time_started} seconds to start up')
 	clear_screen()
 
-	sanity_check(rom, platform, emulator, core, args)
+	if ENABLE_SANITY_CHECK:
+		sanity_check(rom, platform, emulator, core, args)
 	try:
 		runner.run(command)
 		exit_code = 0
