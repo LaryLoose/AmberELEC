@@ -26,7 +26,7 @@ Driver:
 ---
 --- a/drivers/power/rk817_battery.c
 +++ b/drivers/power/rk817_battery.c
-@@ -173,6 +173,11 @@
+@@ -173,6 +173,18 @@
  #define SIMULATE_CHRG_K			1500
  #define FULL_CHRG_K			400
  
@@ -34,28 +34,36 @@ Driver:
 +#define IDLE_CALIB_CUR_MAX		500	/* mA: only correct near rest */
 +#define IDLE_CALIB_CNT			12	/* consecutive cycles (~1 min) */
 +#define IDLE_CALIB_MIN_GAP		3	/* %: min soc drift to correct */
++#define IDLE_CALIB_TOP_SKIP		90	/* %: above this trust coulomb, skip OCV pull-down */
++
++/* full detection via IR-compensated OCV: this board's CHG_STS reads CHRG_OFF
++ * even mid-charge, and terminal voltage AND charge current both sag under
++ * system load, but OCV = V - I*bat_res stays load-invariant and tracks SoC */
++#define FULL_DET_OCV			4195 /* mV: IR-comp OCV at full */
++#define FULL_DET_CNT			3	 /* consecutive cycles */
 +
  enum work_mode {
  	MODE_ZERO = 0,
  	MODE_FINISH,
-@@ -598,6 +603,10 @@
+@@ -598,6 +609,11 @@
  	bool				is_first_on;
  	bool				is_force_calib;
  	int				last_dsoc;
 +	int				idle_calib_cnt;
++	int				full_det_cnt;
 +	s64				learn_dis_uah;
 +	bool				learn_valid;
 +	unsigned long			learn_last_sec;
  	u8				cvtlmt_int_event;
  	u8				slp_dcdc_en_reg;
  	int				ocv_pre_dsoc;
-@@ -1728,6 +1737,51 @@
+@@ -1728,6 +1744,44 @@
  	INIT_DELAYED_WORK(&battery->calib_delay_work, rk817_bat_internal_calib);
  }
  
 +/*
 + * Learn the real full-charge capacity by counting the coulombs delivered from
-+ * a full charge (CHARGE_FINISH) down to empty (pwroff). Uses an own integrator
++ * a full charge (voltage-detected) down to empty (pwroff). Uses an own integrator
 + * because the OCV re-anchor resets the hw coulomb registers. Tracks ageing and
 + * persists the result to NEW_FCC.
 + */
@@ -68,19 +76,12 @@ Driver:
 +
 +	battery->learn_last_sec = now;
 +
-+	/* (re)anchor while full: this charger reports CHRG_OFF (not CHARGE_FINISH)
-+	 * at full, so key off the SoC (rsoc is in milli-%) instead */
-+	if (battery->rsoc >= 99500) {
-+		battery->learn_dis_uah = 0;
-+		battery->learn_valid = true;
++	if (!battery->learn_valid)
 +		return;
-+	}
-+	if (battery->current_avg > 0) {	/* recharge before empty voids it */
++	if (battery->chrg_status == CC_OR_CV_CHRG) {	/* recharge voids it */
 +		battery->learn_valid = false;
 +		return;
 +	}
-+	if (!battery->learn_valid)
-+		return;
 +
 +	if (dt > 0 && dt < 300 && battery->current_avg < 0)
 +		battery->learn_dis_uah +=
@@ -163,7 +164,7 @@ Driver:
  			val->intval = POWER_SUPPLY_STATUS_FULL;
  		else {
  			if ((battery->chip_id != RK809_ID) &&
-@@ -2122,9 +2155,23 @@
+@@ -2122,9 +2155,36 @@
  	.get_property	= rk817_battery_get_property,
  };
  
@@ -180,6 +181,19 @@ Driver:
 +}
 +static DEVICE_ATTR_RO(fcc);
 +
++/* IR-compensated open-circuit voltage (uV): V - I*bat_res, load-invariant */
++static ssize_t ocv_show(struct device *dev,
++			struct device_attribute *attr, char *buf)
++{
++	struct power_supply *psy = dev_get_drvdata(dev);
++	struct rk817_battery_device *battery = power_supply_get_drvdata(psy);
++	int ocv = battery->voltage_avg -
++		  battery->current_avg * battery->bat_res / 1000;
++
++	return sprintf(buf, "%d\n", ocv * 1000);
++}
++static DEVICE_ATTR_RO(ocv);
++
  static int rk817_bat_init_power_supply(struct rk817_battery_device *battery)
  {
  	struct power_supply_config psy_cfg = { .drv_data = battery, };
@@ -187,7 +201,7 @@ Driver:
  
  	battery->bat = devm_power_supply_register(battery->dev,
  						  &rk817_bat_desc,
-@@ -2134,6 +2181,10 @@
+@@ -2134,6 +2194,14 @@
  		return PTR_ERR(battery->bat);
  	}
  
@@ -195,10 +209,14 @@ Driver:
 +	if (ret)
 +		dev_err(battery->dev, "create fcc attr failed\n");
 +
++	ret = device_create_file(&battery->bat->dev, &dev_attr_ocv);
++	if (ret)
++		dev_err(battery->dev, "create ocv attr failed\n");
++
  	return 0;
  }
  
-@@ -2198,16 +2249,17 @@
+@@ -2198,16 +2266,17 @@
  static void rk817_bat_power_supply_changed(struct rk817_battery_device *battery)
  {
  	static int old_soc = -1;
@@ -218,7 +236,7 @@ Driver:
  	battery->last_dsoc = battery->dsoc;
  	power_supply_changed(battery->bat);
  	DBG("changed: dsoc=%d, rsoc=%d, v=%d, ov=%d c=%d, cap=%d, f=%d\n",
-@@ -2845,6 +2897,41 @@
+@@ -2845,6 +2914,70 @@
  	DBG("info END.\n");
  }
  
@@ -234,6 +252,11 @@ Driver:
 +{
 +	int cur = battery->current_avg;
 +	int ocv_vol, ocv_cap, ocv_soc;
++
++	/* near full the OCV is transiently depressed by post-charge surface
++	 * charge; trust the linear coulomb count there instead of pulling down */
++	if (battery->rsoc > IDLE_CALIB_TOP_SKIP * 1000)
++		return;
 +
 +	if (battery->chrg_status == CHARGE_FINISH || cur >= 0 ||
 +	    -cur > IDLE_CALIB_CUR_MAX) {
@@ -257,13 +280,38 @@ Driver:
 +	rk817_bat_init_capacity(battery, ocv_cap);
 +}
 +
++/*
++ * Re-sync to 100% and (re)arm the fcc learner only when truly full. CHG_STS
++ * reads CHRG_OFF even mid-charge, and under system load both the terminal
++ * voltage and the charge current sag (shared power path), so neither alone is
++ * reliable; the IR-compensated OCV (V - I*bat_res) is load-invariant.
++ */
++static void rk817_bat_charge_full_check(struct rk817_battery_device *battery)
++{
++	if (!rk817_bat_get_charge_state(battery) ||
++	    battery->voltage_avg -
++	    battery->current_avg * battery->bat_res / 1000 < FULL_DET_OCV) {
++		battery->full_det_cnt = 0;
++		return;
++	}
++	if (++battery->full_det_cnt < FULL_DET_CNT)
++		return;
++	battery->full_det_cnt = FULL_DET_CNT;
++
++	if (battery->rsoc < 100 * 1000)
++		rk817_bat_init_capacity(battery, battery->fcc);
++	battery->learn_dis_uah = 0;
++	battery->learn_valid = true;
++}
++
  static void rk817_battery_work(struct work_struct *work)
  {
  	struct rk817_battery_device *battery =
-@@ -2853,6 +2940,8 @@
+@@ -2853,6 +2981,9 @@
  			     bat_delay_work.work);
  
  	rk817_bat_update_info(battery);
++	rk817_bat_charge_full_check(battery);
 +	rk817_bat_idle_ocv_calib(battery);
 +	rk817_bat_fcc_learn(battery);
  	rk817_bat_lowpwr_check(battery);
@@ -278,9 +326,9 @@ Driver:
 -			ocv_table = <3165 3220 3280 3330 3380 3430 3480
 -			3530 3580 3630 3670 3710 3750 3790
 -			3830 3870 3910 3950 3990 3995 4000>;
-+			ocv_table = <3476 3504 3535 3557 3576 3590 3604
++			ocv_table = <3440 3480 3535 3557 3576 3590 3604
 +			3617 3631 3650 3675 3706 3740 3776
-+			3815 3855 3897 3940 3985 4034 4081>;
++			3815 3855 3897 3960 4030 4110 4200>;
  
  
  			/* KPL605475 Battery Spec */
@@ -297,15 +345,6 @@ Driver:
  			sleep_enter_current = <300>;
  			sleep_exit_current = <300>;
  			sleep_filter_current = <100>;
-@@ -1269,7 +1269,7 @@
- 			min_input_voltage = <4500>;
- 			max_input_current = <1500>;
- 			max_chrg_current = <2000>;
--			max_chrg_voltage = <4200>;
-+			max_chrg_voltage = <4100>;
- 			chrg_term_mode = <0>;
- 			chrg_finish_cur = <52>;
- 			virtual_power = <0>;
 --- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
 +++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
 @@ -1234,9 +1234,9 @@
@@ -315,9 +354,9 @@ Driver:
 -			ocv_table = <3165 3220 3280 3330 3380 3430 3480
 -			3530 3580 3630 3670 3710 3750 3790
 -			3830 3870 3910 3950 3990 3995 4000>;
-+			ocv_table = <3476 3504 3535 3557 3576 3590 3604
++			ocv_table = <3440 3480 3535 3557 3576 3590 3604
 +			3617 3631 3650 3675 3706 3740 3776
-+			3815 3855 3897 3940 3985 4034 4081>;
++			3815 3855 3897 3960 4030 4110 4200>;
  
  
  			/* KPL605475 Battery Spec */
@@ -334,12 +373,3 @@ Driver:
  			sleep_enter_current = <300>;
  			sleep_exit_current = <300>;
  			sleep_filter_current = <100>;
-@@ -1269,7 +1269,7 @@
- 			min_input_voltage = <4500>;
- 			max_input_current = <1500>;
- 			max_chrg_current = <2000>;
--			max_chrg_voltage = <4200>;
-+			max_chrg_voltage = <4100>;
- 			chrg_term_mode = <0>;
- 			chrg_finish_cur = <52>;
- 			virtual_power = <0>;
