@@ -216,13 +216,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // capacity is the learned Coulomb SoC.
-    SysNode current, voltage, capacity, fcc, status;
+    // capacity is the learned Coulomb SoC; ocv is the driver's IR-compensated OCV.
+    SysNode current, voltage, capacity, fcc, status, ocv;
     current.open_at(directory_fd, "current_now");
     voltage.open_at(directory_fd, "voltage_now");
     capacity.open_at(directory_fd, "capacity");
     fcc.open_at(directory_fd, "fcc");
     status.open_at(directory_fd, "status");
+    ocv.open_at(directory_fd, "ocv");
 
     struct sigaction signal_action {};
     signal_action.sa_handler = on_signal;
@@ -244,7 +245,7 @@ int main(int argc, char** argv) {
         }
         struct stat file_status;
         if (fstat(log_fd, &file_status) == 0 && file_status.st_size == 0) {
-            const char* header = "timestamp,power_w,current_ma,voltage_v,capacity_coulomb_pct,fcc_mah,fcc_learning,status\n";
+            const char* header = "timestamp,power_w,current_ma,voltage_v,ocv_v,capacity_coulomb_pct,fcc_mah,fcc_learning,status\n";
             write_all(log_fd, header, strlen(header));
         }
     } else {
@@ -261,19 +262,21 @@ int main(int argc, char** argv) {
 
     while (g_running) {
         bool current_ok = false, voltage_ok = false, capacity_ok = false;
-        bool fcc_ok = false;
+        bool fcc_ok = false, ocv_ok = false;
         long long current_ua = read_int(current, current_ok);
         long long voltage_uv = read_int(voltage, voltage_ok);
         long long capacity_pct = read_int(capacity, capacity_ok);
+        long long ocv_uv = read_int(ocv, ocv_ok);
         Fcc fcc_status = read_fcc(fcc, fcc_ok);
         read_text(status, status_text, sizeof status_text);
 
         double now = mono_now();
         bool power_ok = current_ok && voltage_ok;
-        double watts = 0.0;
+        double watts = 0.0;      // + = discharging (load), - = charging
+        double ocv_v = ocv_ok ? static_cast<double>(ocv_uv) / 1e6 : 0.0;
         bool changed = false;
         if (power_ok) {
-            watts = std::fabs(static_cast<double>(current_ua)) * 1e-6 *
+            watts = -static_cast<double>(current_ua) * 1e-6 *
                     static_cast<double>(voltage_uv) * 1e-6;
             if (!have_previous_current || current_ua != previous_current) {
                 previous_current = current_ua;
@@ -288,9 +291,9 @@ int main(int argc, char** argv) {
                 char timestamp[32];
                 format_timestamp(timestamp, sizeof timestamp);
                 char line[256];
-                int written = snprintf(line, sizeof line, "%s,%.3f,%.0f,%.3f,", timestamp,
+                int written = snprintf(line, sizeof line, "%s,%.3f,%.0f,%.3f,%.3f,", timestamp,
                                        watts, static_cast<double>(current_ua) / 1000.0,
-                                       static_cast<double>(voltage_uv) / 1e6);
+                                       static_cast<double>(voltage_uv) / 1e6, ocv_v);
                 written += snprintf(line + written, sizeof line - written, capacity_ok ? "%lld," : "n/a,", capacity_pct);
                 if (fcc_ok)
                     written += snprintf(line + written, sizeof line - written,
@@ -303,11 +306,14 @@ int main(int argc, char** argv) {
                 write_all(log_fd, line, static_cast<size_t>(written));
             }
         } else {
-            double scale = stats.has ? (stats.max > 1.0 ? stats.max : 1.0) : 1.0;
+            double scale = (stats.has && stats.max > 3.0) ? stats.max : 3.0;
             render_bar(bar, sizeof bar, watts, scale, 24);
             int written = 0;
             written += snprintf(frame + written, sizeof frame - written, "%s", kCursorHome);
-            written += snprintf(frame + written, sizeof frame - written, " ptop - live power monitor%s\r\n%s\r\n", kClearEol, kClearEol);
+            written += snprintf(frame + written, sizeof frame - written, " pmon - live power monitor%s\r\n%s\r\n", kClearEol, kClearEol);
+            const char* dir = "idle";
+            if (current_ok && current_ua > 5000) dir = "charging";
+            else if (current_ok && current_ua < -5000) dir = "discharging";
             if (power_ok)
                 written += snprintf(frame + written, sizeof frame - written,
                                     " %-11s: %6.2f W  %s%s\r\n", "Power", watts, bar,
@@ -317,8 +323,8 @@ int main(int argc, char** argv) {
                                     " %-11s:    n/a%s\r\n", "Power", kClearEol);
             if (current_ok)
                 written += snprintf(frame + written, sizeof frame - written,
-                                    " %-11s: %6.0f mA%s\r\n", "Current",
-                                    static_cast<double>(current_ua) / 1000.0, kClearEol);
+                                    " %-11s: %6.0f mA  %s%s\r\n", "Current",
+                                    static_cast<double>(current_ua) / 1000.0, dir, kClearEol);
             else
                 written += snprintf(frame + written, sizeof frame - written,
                                     " %-11s:    n/a%s\r\n", "Current", kClearEol);
@@ -329,6 +335,12 @@ int main(int argc, char** argv) {
             else
                 written += snprintf(frame + written, sizeof frame - written,
                                     " %-11s:    n/a%s\r\n", "Voltage", kClearEol);
+            if (ocv_ok)
+                written += snprintf(frame + written, sizeof frame - written,
+                                    " %-11s: %6.3f V%s\r\n", "OCV", ocv_v, kClearEol);
+            else
+                written += snprintf(frame + written, sizeof frame - written,
+                                    " %-11s:    n/a%s\r\n", "OCV", kClearEol);
             if (capacity_ok)
                 written += snprintf(frame + written, sizeof frame - written,
                                     " %-11s: %6lld %%%s\r\n", "SoC", capacity_pct,
@@ -363,8 +375,8 @@ int main(int argc, char** argv) {
                                     kClearEol, "Min/Max", kClearEol);
             }
             written += snprintf(frame + written, sizeof frame - written,
-                                "%s\r\n SoC = State of Charge   FCC = Full Charge Capacity%s\r\n interval %.2fs - Ctrl-C to quit%s\r\n",
-                                kClearEol, kClearEol, interval, kClearEol);
+                                "%s\r\n SoC = State of Charge%s\r\n FCC = Full Charge Capacity%s\r\n OCV = Open Circuit Voltage (IR-compensated)%s\r\n interval %.2fs - Ctrl-C to quit%s\r\n",
+                                kClearEol, kClearEol, kClearEol, kClearEol, interval, kClearEol);
             if (written > static_cast<int>(sizeof frame)) written = sizeof frame;
             write_all(STDOUT_FILENO, frame, static_cast<size_t>(written));
         }
