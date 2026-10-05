@@ -5,11 +5,47 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <signal.h>
 
 #define GPIO_PATH "/sys/class/gpio/gpio77"
 #define BATTERY_CAPACITY "/sys/class/power_supply/battery/capacity"
 #define BATTERY_STATUS "/sys/class/power_supply/battery/status"
 #define ROMS_PATH "/roms"
+#define LOG_DIR "/storage/.config/battery"
+
+static volatile sig_atomic_t terminate = 0;
+
+static void on_signal(int sig) {
+    (void)sig;
+    terminate = 1;
+}
+
+void log_message(const char *msg) {
+    struct stat st;
+    if (stat(LOG_DIR, &st) != 0 || !S_ISDIR(st.st_mode)) return;
+
+    time_t now = time(NULL);
+    struct tm tm;
+    char day[16];
+    char ts[32];
+    char path[64];
+    localtime_r(&now, &tm);
+    strftime(day, sizeof(day), "%Y-%m-%d", &tm);
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
+    snprintf(path, sizeof(path), "%s/battery-%s.log", LOG_DIR, day);
+
+    FILE *fp = fopen(path, "a");
+    if (!fp) return;
+    fprintf(fp, "%s %s\n", ts, msg);
+    fclose(fp);
+}
+
+void log_level(int cap, const char *status) {
+    char line[64];
+    snprintf(line, sizeof(line), "level=%d status=%s", cap, status);
+    log_message(line);
+}
 
 enum Color { RED, GREEN, YELLOW, PURPLE };
 
@@ -102,7 +138,13 @@ int main() {
         r3xs_yellow = PURPLE;
     }
 
-    while (1) {
+    signal(SIGTERM, on_signal);
+    signal(SIGINT, on_signal);
+
+    int prev_cap = -1;
+    char prev_stat[32] = {0};
+
+    while (!terminate) {
         int cap = 0;
         char stat[32] = {0};
 
@@ -118,8 +160,15 @@ int main() {
             fclose(fp);
         }
 
+        if (cap != prev_cap || strcmp(stat, prev_stat) != 0) {
+            log_level(cap, stat);
+            prev_cap = cap;
+            strncpy(prev_stat, stat, sizeof(prev_stat) - 1);
+            prev_stat[sizeof(prev_stat) - 1] = '\0';
+        }
+
         if (strcmp(stat, "Discharging") == 0) {
-            if (cap <= 10) {
+            if (cap <= 5) {
                 for (int ctr = 0; ctr < 5; ctr++) {
                     set_led(r3xs_yellow);
                     usleep(500000); // 0.5s
@@ -127,7 +176,7 @@ int main() {
                     usleep(500000); // 0.5s
                 }
                 continue;
-            } else if (cap <= 20) {
+            } else if (cap <= 10) {
                 set_led(r3xs_red);
             } else if (cap <= 30) {
                 set_led(r3xs_yellow);
@@ -143,5 +192,6 @@ int main() {
         usleep(5000000); // 5s
     }
 
+    log_message("Shutdown");
     return 0;
 }
