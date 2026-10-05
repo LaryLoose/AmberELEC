@@ -1,0 +1,64 @@
+--- a/main.cpp
++++ b/main.cpp
+@@ -379,6 +379,17 @@
+ extern "C" { unsigned long SDL_GetThreadID(struct SDL_Thread* = NULL); }
+ extern "C" { extern int SDL_GetModState(void); }
+ 
++// AmberELEC: switch the KMS display mode to match the emulated DOS refresh
++// (e.g. 70Hz for VGA mode 13h) so scrolling runs 1:1 with the panel.
++struct DBP_SDL_DisplayMode { unsigned int format; int w, h, refresh_rate; void* driverdata; };
++extern "C" { struct SDL_Window* SDL_GL_GetCurrentWindow(void); }
++extern "C" { int SDL_GetWindowDisplayIndex(struct SDL_Window*); }
++extern "C" { int SDL_GetNumDisplayModes(int displayIndex); }
++extern "C" { int SDL_GetDisplayMode(int displayIndex, int modeIndex, struct DBP_SDL_DisplayMode* mode); }
++extern "C" { int SDL_GetCurrentDisplayMode(int displayIndex, struct DBP_SDL_DisplayMode* mode); }
++extern "C" { int SDL_SetWindowDisplayMode(struct SDL_Window*, const struct DBP_SDL_DisplayMode*); }
++extern "C" { int SDL_SetWindowFullscreen(struct SDL_Window*, unsigned int flags); }
++
+ // Minimal SDL2 GameController forward declarations (main.cpp does not include SDL headers)
+ extern "C" {
+ 	struct SDL_GameControllerButtonBind_ZL { int bindType; union { int button; int axis; struct { int hat, hat_mask; } hat; } value; };
+@@ -803,6 +814,34 @@
+ 	mtxCoreOptions.Unlock();
+ }
+ 
++static int g_dbpDispRefresh = 0;
++static void DBP_MatchDisplayFps(float fps)
++{
++	if (fps < 20.0f || fps > 200.0f) return;
++	int want = (int)(fps + 0.5f);
++	if (want == g_dbpDispRefresh) return;
++	g_dbpDispRefresh = want;
++	struct SDL_Window* win = SDL_GL_GetCurrentWindow();
++	if (!win) { g_dbpDispRefresh = 0; return; }
++	int disp = SDL_GetWindowDisplayIndex(win); if (disp < 0) disp = 0;
++	struct DBP_SDL_DisplayMode cur; if (SDL_GetCurrentDisplayMode(disp, &cur)) return;
++	// Pick the panel refresh that is the cleanest integer multiple of the DOS
++	// rate (e.g. 30fps->60Hz, 35fps->70Hz, 70fps->70Hz) to avoid judder.
++	int n = SDL_GetNumDisplayModes(disp), bestscore = 1000000000;
++	struct DBP_SDL_DisplayMode m, best; best.refresh_rate = 0;
++	for (int i = 0; i < n; i++)
++	{
++		if (SDL_GetDisplayMode(disp, i, &m) || m.w != cur.w || m.h != cur.h || m.refresh_rate <= 0) continue;
++		int k = (m.refresh_rate + want / 2) / want; if (k < 1) k = 1;
++		int judder = m.refresh_rate - k * want; if (judder < 0) judder = -judder;
++		int score = judder * 1000 - m.refresh_rate;
++		if (score < bestscore) { bestscore = score; best = m; }
++	}
++	if (!best.refresh_rate || best.refresh_rate == cur.refresh_rate) return;
++	SDL_SetWindowDisplayMode(win, &best);
++	SDL_SetWindowFullscreen(win, 0x00000001);
++}
++
+ static void ApplyFPSLimit(unsigned char newThrottleMode = ThrottleMode, bool unpause = false)
+ {
+ 	ThrottleMode = newThrottleMode;
+@@ -1936,6 +1975,8 @@
+ 				retro_run();
+ 	}
+ 
++	DBP_MatchDisplayFps((float)av.timing.fps);
++
+ 	if (DoSave) RunSave();
+ 	if (DoLoad) RunLoad();
+ 	if (DoApplyInterfaceOptions) ApplyInterfaceOptions();
