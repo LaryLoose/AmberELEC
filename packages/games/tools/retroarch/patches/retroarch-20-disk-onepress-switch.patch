@@ -1,0 +1,39 @@
+--- a/disk_control_interface.c
++++ b/disk_control_interface.c
+@@ -408,6 +408,7 @@
+ {
+    size_t _len;
+    bool err              = false;
++   bool auto_cycle       = false;
+    unsigned num_images   = 0;
+    unsigned msg_duration = 0;
+    char msg[128];
+@@ -422,9 +423,15 @@
+        || !disk_control->cb.set_image_index)
+       return false;
+ 
+-   /* Ensure that disk is currently ejected */
++   /* If the tray is closed, open it automatically so that 'Disk Next'/'Disk
++    * Previous' switch disks in a single press; it is closed again below. */
+    if (!disk_control->cb.get_eject_state())
+-      return false;
++   {
++      if (!disk_control->cb.set_eject_state)
++         return false;
++      auto_cycle = true;
++      disk_control->cb.set_eject_state(true);
++   }
+ 
+    /* Get current number of disk images */
+    num_images = disk_control->cb.get_num_images();
+@@ -481,6 +488,10 @@
+       }
+    }
+ 
++   /* Re-close the tray if we opened it automatically */
++   if (auto_cycle)
++      disk_control->cb.set_eject_state(false);
++
+    return !err;
+ }
+ 
