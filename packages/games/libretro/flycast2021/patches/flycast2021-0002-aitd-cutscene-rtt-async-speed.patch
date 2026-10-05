@@ -1,0 +1,48 @@
+Speed up render-to-texture (motion blur) cutscenes (e.g. Alone in the Dark: The
+New Nightmare) that otherwise run at roughly half speed (slow motion + slow audio).
+
+These cutscenes issue an extra render-to-texture pass per frame. In threaded
+rendering the emulation thread blocks (re.Wait) until that RTT render finishes on
+the GPU, which serializes the ~14ms RTT render with emulation and roughly halves
+the emulated Dreamcast clock (vblanks drop from ~60 to ~30/s).
+
+When RenderToTextureBuffer is disabled the SH4 never reads back the RTT pixels
+(the result stays a GL texture resolved on the render thread, in order), so the
+emulation thread does not need to wait for GPU completion. Release the emulation
+thread early for RTT frames in that case (as is already done for visible frames),
+letting the RTT render overlap with emulation. When RenderToTextureBuffer is on,
+keep the original synchronous behaviour.
+
+Note: with the single-slot render queue this may occasionally drop a frame under
+load (minor visual glitch) in exchange for full speed; a glitch-free version would
+require a deeper render-pipeline rework.
+
+--- a/core/hw/pvr/Renderer_if.cpp	2026-09-11 22:20:10.377986213 +0200
++++ b/core/hw/pvr/Renderer_if.cpp	2026-09-11 22:20:10.380110964 +0200
+@@ -168,11 +168,14 @@
+    }
+    bool proc = renderer->Process(ctx);
+ #if !defined(TARGET_NO_THREADS)
+-   if (settings.rend.ThreadedRendering && (!proc || (!ctx->rend.isRenderFramebuffer && !ctx->rend.isRTT)))
+-	   // If rendering to texture, continue locking until the frame is rendered
++   // AE: RTT normalerweise synchron abwarten. Bei RenderToTextureBuffer=off liest die SH4
++   // die RTT-Pixel nicht -> async freigeben (Render-Thread rendert RTT+sichtbar in Reihenfolge),
++   // damit der 14ms-RTT-Render die Emulation nicht seriell blockiert (Cutscene-Slowdown).
++   bool rttAsync = ctx->rend.isRTT && !settings.rend.RenderToTextureBuffer;
++   if (settings.rend.ThreadedRendering && (!proc || (!ctx->rend.isRenderFramebuffer && (!ctx->rend.isRTT || rttAsync))))
+       re.Set();
+ #endif
+-   
++
+    bool do_swp = proc && renderer->Render();
+ 
+    return do_swp;
+@@ -220,7 +223,7 @@
+ 		swap_pending = do_swp && !_pvrrc->rend.isRenderFramebuffer && FB_R_SOF1 != FB_W_SOF1
+ 				 && settings.rend.ThreadedRendering && settings.rend.DelayFrameSwapping;
+ 
+-		if (settings.rend.ThreadedRendering && _pvrrc->rend.isRTT)
++		if (settings.rend.ThreadedRendering && _pvrrc->rend.isRTT && settings.rend.RenderToTextureBuffer)
+ 			re.Set();
+ 
+ 		//clear up & free data ..

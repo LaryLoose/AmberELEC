@@ -1,0 +1,42 @@
+Fix vertically offset / doubled image in Alone in the Dark: The New Nightmare cutscenes.
+
+The letterboxed motion-blur cutscenes render the scene into a 512x480 render-to-texture
+that is stored in a 512x512 (power-of-two) GL texture, so the content only fills 480 of
+512 rows. Two full-screen quads sample this RTT: the visible-frame display blit (v 0..0.75)
+and the RTT-frame motion-blur "ghost" quad (v 0..1). Neither applies the pow2/real-height
+correction, so the content ends up 512/480 too tall and shifted down, and the two layers
+no longer coincide (doubled image).
+
+Scale the V texture coordinate of the quads that sample this RTT by pow2/realHeight
+(512/480) so both layers line up, matching the reference (upstream flycast) output.
+
+--- a/core/rend/gles/gles.cpp	2026-09-11 21:11:55.563357748 +0200
++++ b/core/rend/gles/gles.cpp	2026-09-11 21:11:55.565532348 +0200
+@@ -940,6 +940,27 @@
+ 
+ 	if (!pvrrc.isRenderFramebuffer)
+ 	{
++		// AITD-Cutscene: Anzeige-Blit (sichtbarer Frame, v0..0.75) UND Ghost-Quad (RTT-Frame,
++		// v0..1) sampeln die RTT-Textur (512x480 Content in 512x512 pow2) ohne pow2/RealHöhe-
++		// Korrektur. V der RTT-blittenden Quads mit pow2/RealHöhe skalieren, damit beide Ebenen
++		// deckungsgleich liegen (behebt Versatz + Doppelbilder).
++		{
++			const float vscl = 512.0f / 480.0f;
++			List<PolyParam>* lists[3] = { &pvrrc.global_param_op, &pvrrc.global_param_pt, &pvrrc.global_param_tr };
++			Vertex* vh = pvrrc.verts.head();
++			u32* ih = pvrrc.idx.head();
++			for (int li = 0; li < 3; li++)
++			{
++				PolyParam* pp = lists[li]->head();
++				for (u32 pi = 0; pi < lists[li]->used(); pi++)
++				{
++					if (pp[pi].pcw.Texture && pp[pi].tcw.TexAddr == (0x677880u >> 3))
++						for (u32 vi = 0; vi < pp[pi].count; vi++)
++							vh[ih[pp[pi].first + vi]].v *= vscl;
++				}
++			}
++		}
++
+ 		//Main VBO
+ 		glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry); glCheck();
+ 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs); glCheck();
