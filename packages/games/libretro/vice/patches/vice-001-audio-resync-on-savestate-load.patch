@@ -1,0 +1,41 @@
+--- a/libretro/libretro-core.c
++++ b/libretro/libretro-core.c
+@@ -50,6 +50,11 @@
+ unsigned retro_renderloop = 1;
+ bool retro_sound_keep_alive = false;
+ 
++/* Frame counter to tell a discrete savestate load apart from rewind
++ * (which unserializes every frame). */
++static unsigned long retro_frame_counter = 0;
++static unsigned long last_unserialize_frame = (unsigned long)-1;
++
+ /* VKBD */
+ extern bool retro_vkbd;
+ extern void print_vkbd(void);
+@@ -8260,6 +8265,8 @@
+ 
+ void retro_run(void)
+ {
++   retro_frame_counter++;
++
+    /* Core options */
+    bool updated = false;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
+@@ -8711,6 +8718,17 @@
+    request_restart = false;
+    /* Sync Disc Control index for D64 multidisks */
+    dc_sync_index();
++
++   /* Reinitialize audio after a discrete savestate load, mirroring the SID
++    * engine change. Skipped during rewind, where unserialize runs on every
++    * consecutive frame (that path keeps audio alive on purpose). */
++   {
++      bool consecutive = (last_unserialize_frame != (unsigned long)-1)
++            && (retro_frame_counter - last_unserialize_frame <= 1);
++      if (!consecutive)
++         libretro_sound_reset();
++      last_unserialize_frame = retro_frame_counter;
++   }
+ }
+ 
+ size_t retro_serialize_size(void)
