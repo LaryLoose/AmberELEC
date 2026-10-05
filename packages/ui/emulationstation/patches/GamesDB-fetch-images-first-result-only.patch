@@ -1,0 +1,57 @@
+diff --git a/es-app/src/scrapers/GamesDBJSONScraper.cpp b/es-app/src/scrapers/GamesDBJSONScraper.cpp
+index 786b87d6e..d956a3823 100644
+--- a/es-app/src/scrapers/GamesDBJSONScraper.cpp
++++ b/es-app/src/scrapers/GamesDBJSONScraper.cpp
+@@ -411,7 +411,7 @@ namespace
+ 		return "";
+ 	}
+ 
+-	void processGame(const Value& game, const Value& boxart, std::vector<ScraperSearchResult>& results)
++	void processGame(const Value& game, const Value& boxart, const std::string& imageJson, std::vector<ScraperSearchResult>& results)
+ 	{
+ 		std::string baseImageUrlThumb = getStringOrThrow(boxart["base_url"], "thumb");
+ 		std::string baseImageUrlLarge = getStringOrThrow(boxart["base_url"], "large");
+@@ -456,13 +456,10 @@ namespace
+ 			}
+ 		}
+ 
+-		const std::string apiKey = std::string("apikey=") + resources.getApiKey();
+-		HttpReq req("https://api.thegamesdb.net/v1/Games/Images?" + apiKey + "&games_id=" + id);
+-		if (req.wait())
++		if (!imageJson.empty())
+ 		{
+ 			Document imageDoc;
+-			auto json = req.getContent();
+-			imageDoc.Parse(json.c_str());
++			imageDoc.Parse(imageJson.c_str());
+ 
+ 			std::string pathMedium;
+ 			std::string pathLarge;
+@@ -594,13 +591,26 @@ bool TheGamesDBJSONRequest::process(HttpReq* request, std::vector<ScraperSearchR
+ 
+ 	resources.ensureResources();
+ 
++	// Only the first (best) match is ever downloaded - auto-scrape uses results[0]
++	// and the manual list defaults to it - so fetch the extra media (screenshots,
++	// fanart, logo, ...) only for that one game instead of once per candidate.
++	const std::string apiKey = std::string("apikey=") + resources.getApiKey();
++
+ 	for (int i = 0; i < (int)games.Size(); ++i)
+ 	{
+ 		auto& v = games[i];
+ 
++		std::string imageJson;
++		if (i == 0 && v.HasMember("id") && v["id"].IsInt())
++		{
++			HttpReq req("https://api.thegamesdb.net/v1/Games/Images?" + apiKey + "&games_id=" + std::to_string(v["id"].GetInt()));
++			if (req.wait())
++				imageJson = req.getContent();
++		}
++
+ 		try
+ 		{
+-			processGame(v, boxart, results);
++			processGame(v, boxart, imageJson, results);
+ 		}
+ 		catch (std::runtime_error& e)
+ 		{
