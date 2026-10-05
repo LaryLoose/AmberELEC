@@ -29,10 +29,10 @@ else
     PKG_EMUS+=" ${LIBRETRO_CORES_EXTRA}"
   fi
 
-  PKG_EMUS+=" advancemame ppssppsa amiberry hatarisa openbor scummvmsa solarus hypseus-singe ecwolf lzdoom gzdoom raze drastic duckstation mupen64plussa piemu yabasanshiroSA"
+  PKG_EMUS+=" advancemame ppssppsa amiberry hatarisa openbor scummvmsa solarus hypseus-singe ecwolf lzdoom gzdoom raze drastic duckstation mupen64plussa piemu yabasanshiroSA redream"
 fi
 
-PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace odroidgoa-utils rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest evdev-joystick gptokeyb fbgrab ptop squashfs-tools"
+PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace odroidgoa-utils rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest joytest batterymonitor evdev-joystick gptokeyb fbgrab pmon squashfs-tools moonlight-embedded"
 PKG_RETROPIE_DEP="pyudev six git dbus-python coreutils"
 PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_RETROPIE_DEP} ${PKG_EMUS} ports webui"
 
@@ -56,6 +56,36 @@ makeinstall_target() {
       sed -i '/^[[:space:]]*$/d' ${INSTALL}/usr/config/emulationstation/es_systems.cfg
     done
   fi
+
+  sed -i '/^[[:space:]]*<!-- mplayer -->/i\        <!-- moonlight -->\
+        <system>\
+                <name>moonlight</name>\
+                <fullname>Moonlight</fullname>\
+                <manufacturer>System</manufacturer>\
+                <release>System</release>\
+                <hardware>System</hardware>\
+                <path>/storage/roms/moonlight</path>\
+                <extension>.sh</extension>\
+                <command>/usr/bin/runemu.py --rom %ROM% --platform %SYSTEM% --emulator %EMULATOR% --core %CORE% --controllers "%CONTROLLERSCONFIG%"</command>\
+                <platform>moonlight</platform>\
+                <theme>moonlight</theme>\
+                <emulators>\
+                        <emulator name="Moonlight">\
+                                <cores>\
+                                        <core default="true">Moonlight</core>\
+                                </cores>\
+                        </emulator>\
+                </emulators>\
+        </system>' ${INSTALL}/usr/config/emulationstation/es_systems.cfg
+
+# Redream is an additional emulator inside the existing dreamcast system
+  sed -i '/<!-- dreamcast -->/,/<\/emulators>/ { /<\/emulators>/i\
+                        <emulator name="Redream">\
+                                <cores>\
+                                        <core>redream</core>\
+                                </cores>\
+                        </emulator>
+}' ${INSTALL}/usr/config/emulationstation/es_systems.cfg
 
   mkdir -p ${INSTALL}/usr/config/SDL-GameControllerDB
   cp ${PKG_DIR}/SDL_GameControllerDB/gamecontrollerdb.txt ${INSTALL}/usr/config/SDL-GameControllerDB

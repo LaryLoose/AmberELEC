@@ -2,6 +2,32 @@
 <gameList>
 
 	<game>
+		<path>./Joystick Test.sh</path>
+		<name>Joystick Test</name>
+		<desc>Graphical gamepad/joystick tester</desc>
+		<developer>AmberELEC</developer>
+		<publisher>AmberELEC</publisher>
+		<rating>1.0</rating>
+		<releasedate>2026</releasedate>
+		<genre>Script</genre>
+		<thumbnail>./downloaded_images/joysticktest-thumb.png</thumbnail>
+		<image>./downloaded_images/joysticktest.png</image>
+	</game>
+
+	<game>
+		<path>./Battery Monitor.sh</path>
+		<name>Battery Monitor</name>
+		<desc>View battery charge history over time</desc>
+		<developer>AmberELEC</developer>
+		<publisher>AmberELEC</publisher>
+		<rating>1.0</rating>
+		<releasedate>2026</releasedate>
+		<genre>Script</genre>
+		<thumbnail>./downloaded_images/batterymonitor-thumb.png</thumbnail>
+		<image>./downloaded_images/batterymonitor.png</image>
+	</game>
+
+	<game>
 		<path>./File Manager.sh</path>
 		<name>File Manager</name>
 		<desc>Dual panel file manager</desc>
