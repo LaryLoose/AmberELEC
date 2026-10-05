@@ -308,6 +308,22 @@ fi
 
 ### PSX PCSX_REARMED ###
 echo 'Pcsx-rearmed settings.'
+# PSX Region / System type (Auto/PAL/NTSC)
+# Auto lets pcsx_rearmed detect the region from the disc; PAL forces 50Hz, NTSC forces 60Hz.
+get_setting "system_type"
+echo "pcsx_rearmed_region:${EES}"
+if [ "${EES}" == "auto" ] || [ "${EES}" == "false" ] || [ "${EES}" == "none" ] || [ "${EES}" == "0" ]; then
+	if [[ "${CORE}" == "pcsx_rearmed" ]]; then
+		sed -i "/^pcsx_rearmed_region/d" ${RRCONF}
+		echo 'pcsx_rearmed_region = auto' >> ${RRCONF}
+	fi
+else
+	if [[ "${CORE}" == "pcsx_rearmed" ]]; then
+		sed -i "/^pcsx_rearmed_region/d" ${RRCONF}
+		echo "pcsx_rearmed_region = ${EES}" >> ${RRCONF}
+	fi
+fi
+
 # PSX CPU Clock
 get_setting "psx_cpu_clock"
 echo "psx_cpu_clock:${EES}"

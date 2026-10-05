@@ -1,0 +1,79 @@
+diff --git a/src/go2/display.cpp b/src/go2/display.cpp
+index 9edf1cc..c629808 100755
+--- a/src/go2/display.cpp
++++ b/src/go2/display.cpp
+@@ -226,6 +226,48 @@ void go2_display_present(go2_display_t *display, go2_frame_buffer_t *frame_buffe
+     }
+ }
+ 
++void go2_display_set_refresh_rate(go2_display_t *display, float fps)
++{
++    if (!display || fps < 1.0f)
++        return;
++
++    drmModeConnector *connector = drmModeGetConnector(display->fd, display->connector_id);
++    if (!connector)
++        return;
++
++    drmModeModeInfo *best = NULL;
++    float best_diff = 1000.0f;
++    for (int i = 0; i < connector->count_modes; i++)
++    {
++        drmModeModeInfo *m = &connector->modes[i];
++        if (m->hdisplay != display->mode.hdisplay || m->vdisplay != display->mode.vdisplay)
++            continue;
++        float diff = (float)m->vrefresh - fps;
++        if (diff < 0)
++            diff = -diff;
++        if (diff < best_diff)
++        {
++            best_diff = diff;
++            best = m;
++        }
++    }
++
++    // Only switch when we found a close match (<=1.5Hz) that differs from the current mode.
++    if (best && best_diff <= 1.5f && best->vrefresh != display->mode.vrefresh)
++    {
++        logger.log(Logger::DEB, "Switching display mode to %dx%d@%dHz for %.2f fps content",
++                   best->hdisplay, best->vdisplay, best->vrefresh, fps);
++        display->mode = *best;
++    }
++    else
++    {
++        logger.log(Logger::DEB, "Keeping display mode %dx%d@%dHz for %.2f fps content",
++                   display->mode.hdisplay, display->mode.vdisplay, display->mode.vrefresh, fps);
++    }
++
++    drmModeFreeConnector(connector);
++}
++
+ const char *BACKLIGHT_BRIGHTNESS_NAME = "/sys/class/backlight/backlight/brightness";
+ const char *BACKLIGHT_BRIGHTNESS_MAX_NAME = "/sys/class/backlight/backlight/max_brightness";
+ #define BACKLIGHT_BUFFER_SIZE (127)
+diff --git a/src/go2/display.h b/src/go2/display.h
+index 9a223e5..8dcf7b9 100755
+--- a/src/go2/display.h
++++ b/src/go2/display.h
+@@ -47,6 +47,8 @@ void go2_display_destroy(go2_display_t* display);
+ int go2_display_width_get(go2_display_t* display);
+ int go2_display_height_get(go2_display_t* display);
+ void go2_display_present(go2_display_t* display, go2_frame_buffer_t* frame_buffer);
++// Switch the panel to the connector mode whose refresh rate best matches fps (e.g. 50Hz for PAL).
++void go2_display_set_refresh_rate(go2_display_t* display, float fps);
+ uint32_t go2_display_backlight_get(go2_display_t* display);
+ void go2_display_backlight_set(go2_display_t* display, uint32_t value);
+ 
+diff --git a/src/main.cpp b/src/main.cpp
+index 35bbcad..4067049 100755
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -2272,6 +2272,8 @@ int main(int argc, char *argv[])
+     { // just to be sure info are ther
+         originalFps = 60;
+     }
++    // Match the panel refresh rate to the content (e.g. 50Hz for PAL) if such a mode exists.
++    go2_display_set_refresh_rate(display, (float)info.timing.fps);
+     // adaptiveFps = isFlycast() ? true: false;
+     bool redrawInfo = true;
+     // we postpone this here because if we do it before some emulators dont like it (Dosbox core)
