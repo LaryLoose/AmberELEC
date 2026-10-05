@@ -1,0 +1,112 @@
+Port of the upstream rtl8188eus (v5.3.9) join-abort mechanism into the old
+in-kernel Rockchip rtl8188eu driver (v5.2.2.3_24783, 2017).
+
+Problem this closes on RG351MP mesh roaming:
+  cfg80211_rtw_disconnect() aborts a running scan (rtw_scan_abort) but does NOT
+  wait for a join/association that may still be in flight. If wpa_supplicant's
+  association timeout fires while the driver is stuck in _FW_UNDER_LINKING (join
+  frame sent, AP not yet answering), the disconnect path runs
+  free_assoc_resources()+indicate_disconnect() immediately while the join is
+  still live in the cmd queue. A late report_join_res then sets _FW_LINKED after
+  the disconnect already happened -> SME/fw_state divergence.
+
+Mechanism (as in official v5.3.9):
+  rtw_join_abort_timeout() nudges the next MLME cycle (set_link_timer 1ms) and
+  then blocks the disconnect path for up to timeout_ms, polling until
+  _FW_UNDER_LINKING clears. This turns the disconnect into a barrier: a pending
+  join is completed/aborted before the disconnect tears down the association.
+  The join_abort flag itself is only bookkeeping/logging in this driver (there
+  is no if(join_abort) check in link_timer_hdl); the real effect is the
+  set_link_timer nudge plus the wait loop.
+
+Adaptations vs. the official source (old driver has no systime type and no
+cfg80211 connect-request tracking):
+  * use "u32 start" (this driver's convention) instead of "systime start"
+  * drop the "|| rtw_cfg80211_is_connect_requested(adapter)" clauses
+    (rtw_cfg80211_is_connect_requested does not exist in v5.2.2.3)
+
+All primitives used already exist: set_link_timer (rtw_mlme_ext.h),
+check_fwstate/_FW_UNDER_LINKING, rtw_get_current_time/rtw_get_passing_time_ms,
+rtw_msleep_os, RTW_CANNOT_RUN, FUNC_ADPT_FMT/ARG.
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme_ext.h
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme_ext.h
+@@ -629,6 +629,7 @@
+ 	/* _timer		ADDBA_timer; */
+ 	u32 last_scan_time;
+ 	u8	scan_abort;
++	u8	join_abort;
+ 	u8	tx_rate; /* TXRATE when USERATE is set. */
+ 
+ 	u32	retry; /* retry for issue probereq */
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h
+@@ -1047,6 +1047,7 @@
+ void rtw_drv_scan_by_self(_adapter *padapter, u8 reason);
+ void rtw_scan_wait_completed(_adapter *adapter);
+ u32 rtw_scan_abort_timeout(_adapter *adapter, u32 timeout_ms);
++u32 rtw_join_abort_timeout(_adapter *adapter, u32 timeout_ms);
+ void rtw_scan_abort_no_wait(_adapter *adapter);
+ void rtw_scan_abort(_adapter *adapter);
+ 
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/core/rtw_mlme.c
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/core/rtw_mlme.c
+@@ -1731,6 +1731,48 @@
+ 	rtw_scan_abort_timeout(adapter, 200);
+ }
+ 
++static u32 _rtw_wait_join_done(_adapter *adapter, u8 abort, u32 timeout_ms)
++{
++	u32 start;
++	u32 pass_ms;
++	struct mlme_priv *pmlmepriv = &(adapter->mlmepriv);
++	struct mlme_ext_priv *pmlmeext = &(adapter->mlmeextpriv);
++
++	start = rtw_get_current_time();
++
++	pmlmeext->join_abort = abort;
++
++	if (abort)
++		set_link_timer(pmlmeext, 1);
++
++	while (check_fwstate(pmlmepriv, _FW_UNDER_LINKING)
++	       && rtw_get_passing_time_ms(start) <= timeout_ms) {
++
++		if (RTW_CANNOT_RUN(adapter))
++			break;
++
++		RTW_INFO(FUNC_ADPT_FMT" linking...\n", FUNC_ADPT_ARG(adapter));
++		rtw_msleep_os(20);
++	}
++
++	if (_TRUE == abort) {
++		if (check_fwstate(pmlmepriv, _FW_UNDER_LINKING)) {
++			if (!RTW_CANNOT_RUN(adapter))
++				RTW_INFO(FUNC_ADPT_FMT" waiting for join_abort time out!\n", FUNC_ADPT_ARG(adapter));
++		}
++	}
++
++	pmlmeext->join_abort = 0;
++	pass_ms = rtw_get_passing_time_ms(start);
++
++	return pass_ms;
++}
++
++u32 rtw_join_abort_timeout(_adapter *adapter, u32 timeout_ms)
++{
++	return _rtw_wait_join_done(adapter, _TRUE, timeout_ms);
++}
++
+ static struct sta_info *rtw_joinbss_update_stainfo(_adapter *padapter, struct wlan_network *pnetwork)
+ {
+ 	int i;
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c
+@@ -3306,6 +3306,7 @@
+ 	/* if(check_fwstate(&padapter->mlmepriv, _FW_LINKED)) */
+ 	{
+ 		rtw_scan_abort(padapter);
++		rtw_join_abort_timeout(padapter, 300);
+ 		LeaveAllPowerSaveMode(padapter);
+ 		rtw_disassoc_cmd(padapter, 500, _FALSE);
+ 		rtw_sta_mstatus_report(padapter);

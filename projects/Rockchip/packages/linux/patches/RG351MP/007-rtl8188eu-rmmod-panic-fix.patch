@@ -1,0 +1,47 @@
+From: AmberELEC
+Subject: [PATCH] rtl8188eu: run cleanup on rmmod (fix module-unload panic)
+
+The Rockchip vendor exit function rockchip_wifi_exit_module_rtkwifi() has a
+chip-type guard (CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP=y in the RG351
+kernel config):
+
+    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return;
+
+The RTL8188EU is an external USB dongle, so get_wifi_chip_type() (device-tree
+"wifi_chip_type") returns a low/non-RTL value on the RG351MP. The guard then
+early-returns and skips rtw_drv_halt() -> usb_deregister() -> disconnect
+(rtw_dev_remove) -> usb_read_port_cancel(). The module is freed by the kernel
+while the USB driver is still registered and RX urbs are still in flight; a
+pending urb then completes into freed module text:
+
+    Unable to handle kernel paging request ... [last unloaded: 8188eu]
+    LR is at __usb_hcd_giveback_urb ... (usb_read_port_complete)
+
+i.e. a panic + reboot on every rmmod / module reload. The matching guard in the
+init path (rockchip_wifi_init_module_rtkwifi) is already commented out so the
+dongle loads on this non-AP6XXX board; the exit guard was left active, which is
+the asymmetry that breaks unload. Disable the exit guard too so the full
+teardown always runs. Verified on RG351MP (RTL8188EUS 0bda:8179): rmmod +
+modprobe now completes cleanly with no oops (dmesg shows rtw_drv_halt ->
+rtw_dev_remove -> rtw_dev_unload -> "module exit success").
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/usb_intf.c	2026-08-30 09:42:30.652152273 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/usb_intf.c	2026-08-30 10:40:52.412998029 +0200
+@@ -1649,10 +1649,17 @@
+ 
+ void rockchip_wifi_exit_module_rtkwifi(void)
+ {
++/* RTL8188EU is an external USB dongle; get_wifi_chip_type() returns a non-RTL
++ * value here, so this chip-type guard would early-return and skip rtw_drv_halt()
++ * (usb_deregister/disconnect/urb-cancel) on rmmod -> a still-pending RX urb then
++ * completes into freed module text and panics. The init path has the matching
++ * guard commented out for the same reason; keep exit symmetric so cleanup runs. */
++/*
+ #ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
+     int type = get_wifi_chip_type();
+     if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return;
+ #endif
++*/
+     printk("\n");
+     printk("=======================================================\n");
+     printk("==== Dislaunching Wi-Fi driver! (Powered by Rockchip) ====\n");

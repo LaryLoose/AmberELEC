@@ -1,0 +1,147 @@
+Backport of upstream commit e7054989bd67 ("cfg80211: allow passing the BSS to
+cfg80211_connect_result()") into the 4.4.189 cfg80211 core, plus wiring it up in
+the in-kernel Rockchip rtl8188eu driver.
+
+Problem on RG351MP mesh roaming:
+  On a roam the rtl8188eu driver re-associates to the new AP and calls
+  cfg80211_connect_result(). The 4.4 core then self-looks-up the BSS via
+  wdev->ssid in __cfg80211_connect_result(); after a roam that lookup can fail
+  and hit WARN_ON(!bss), so wdev->current_bss is never set. The nl80211 core
+  subsequently rejects the PTK, the 4-way handshake fails (WRONG_KEY) and the
+  link wedges until the dongle is physically re-plugged.
+
+Fix:
+  Add cfg80211_connect_bss(), which lets the driver hand over the exact BSS it
+  already knows (cur_network) so the core does not have to look it up. The
+  driver fetches the target BSS with cfg80211_get_bss() using the REAL target
+  SSID/BSSID (not the possibly-stale wdev->ssid) and passes it in. Fully
+  backward compatible: the existing cfg80211_connect_result() path leaves
+  ev->cr.bss == NULL and behaves exactly as before.
+
+--- a/net/wireless/core.h
++++ b/net/wireless/core.h
+@@ -215,6 +215,7 @@
+ 			const u8 *resp_ie;
+ 			size_t req_ie_len;
+ 			size_t resp_ie_len;
++			struct cfg80211_bss *bss;
+ 			u16 status;
+ 		} cr;
+ 		struct {
+--- a/net/wireless/sme.c
++++ b/net/wireless/sme.c
+@@ -755,6 +755,47 @@
+ 	kfree(country_ie);
+ }
+ 
++void cfg80211_connect_bss(struct net_device *dev, const u8 *bssid,
++			  struct cfg80211_bss *bss, const u8 *req_ie,
++			  size_t req_ie_len, const u8 *resp_ie,
++			  size_t resp_ie_len, u16 status, gfp_t gfp)
++{
++	struct wireless_dev *wdev = dev->ieee80211_ptr;
++	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
++	struct cfg80211_event *ev;
++	unsigned long flags;
++
++	ev = kzalloc(sizeof(*ev) + req_ie_len + resp_ie_len, gfp);
++	if (!ev) {
++		cfg80211_put_bss(wdev->wiphy, bss);
++		return;
++	}
++
++	ev->type = EVENT_CONNECT_RESULT;
++	if (bssid)
++		memcpy(ev->cr.bssid, bssid, ETH_ALEN);
++	if (req_ie_len) {
++		ev->cr.req_ie = ((u8 *)ev) + sizeof(*ev);
++		ev->cr.req_ie_len = req_ie_len;
++		memcpy((void *)ev->cr.req_ie, req_ie, req_ie_len);
++	}
++	if (resp_ie_len) {
++		ev->cr.resp_ie = ((u8 *)ev) + sizeof(*ev) + req_ie_len;
++		ev->cr.resp_ie_len = resp_ie_len;
++		memcpy((void *)ev->cr.resp_ie, resp_ie, resp_ie_len);
++	}
++	if (bss)
++		cfg80211_hold_bss(bss_from_pub(bss));
++	ev->cr.bss = bss;
++	ev->cr.status = status;
++
++	spin_lock_irqsave(&wdev->event_lock, flags);
++	list_add_tail(&ev->list, &wdev->event_list);
++	spin_unlock_irqrestore(&wdev->event_lock, flags);
++	queue_work(cfg80211_wq, &rdev->event_work);
++}
++EXPORT_SYMBOL(cfg80211_connect_bss);
++
+ void cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
+ 			     const u8 *req_ie, size_t req_ie_len,
+ 			     const u8 *resp_ie, size_t resp_ie_len,
+--- a/net/wireless/util.c
++++ b/net/wireless/util.c
+@@ -877,7 +877,7 @@
+ 				ev->cr.resp_ie, ev->cr.resp_ie_len,
+ 				ev->cr.status,
+ 				ev->cr.status == WLAN_STATUS_SUCCESS,
+-				NULL);
++				ev->cr.bss);
+ 			break;
+ 		case EVENT_ROAMED:
+ 			__cfg80211_roamed(wdev, ev->rm.bss, ev->rm.req_ie,
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -4641,6 +4641,29 @@
+ #endif
+ 
+ /**
++ * cfg80211_connect_bss - notify cfg80211 of connection result, with BSS entry
++ *
++ * @dev: network device
++ * @bssid: the BSSID of the AP
++ * @bss: cfg80211 bss entry for the connected AP (consumed one way or another,
++ *	even on error); may be %NULL to let cfg80211 look it up itself
++ * @req_ie: association request IEs (maybe be %NULL)
++ * @req_ie_len: association request IEs length
++ * @resp_ie: association response IEs (may be %NULL)
++ * @resp_ie_len: assoc response IEs length
++ * @status: status code, 0 for successful connection
++ * @gfp: allocation flags
++ *
++ * Like cfg80211_connect_result(), but lets the driver hand over the exact BSS
++ * entry so the cfg80211 core does not have to look it up (which can fail after
++ * a roam and trigger WARN_ON(!bss) in __cfg80211_connect_result()).
++ */
++void cfg80211_connect_bss(struct net_device *dev, const u8 *bssid,
++			  struct cfg80211_bss *bss, const u8 *req_ie,
++			  size_t req_ie_len, const u8 *resp_ie,
++			  size_t resp_ie_len, u16 status, gfp_t gfp);
++
++/**
+  * cfg80211_connect_result - notify cfg80211 of connection result
+  *
+  * @dev: network device
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c
+@@ -762,10 +762,20 @@
+ 			rtw_set_ft_status(padapter, RTW_FT_ASSOCIATED_STA);
+ #endif
+ 	} else {
++		struct cfg80211_bss *bss;
++
+ 		#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0) || defined(COMPAT_KERNEL_RELEASE)
+ 		RTW_INFO("pwdev->sme_state(b)=%d\n", pwdev->sme_state);
+ 		#endif
+-		cfg80211_connect_result(padapter->pnetdev, cur_network->network.MacAddress
++		/* Hand the exact target BSS to cfg80211 instead of letting the core
++		 * look it up via wdev->ssid, which can be stale after a roam and
++		 * make __cfg80211_connect_result() hit WARN_ON(!bss) -> the nl80211
++		 * core then rejects the PTK (key_flag=0xc) and the 4-way handshake
++		 * fails. Match newer rtl8188eus: BSSID-only lookup (ANY/ANY). */
++		bss = cfg80211_get_bss(pwdev->wiphy, NULL, cur_network->network.MacAddress,
++			NULL, 0,
++			IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
++		cfg80211_connect_bss(padapter->pnetdev, cur_network->network.MacAddress, bss
+ 			, pmlmepriv->assoc_req + sizeof(struct rtw_ieee80211_hdr_3addr) + 2
+ 			, pmlmepriv->assoc_req_len - sizeof(struct rtw_ieee80211_hdr_3addr) - 2
+ 			, pmlmepriv->assoc_rsp + sizeof(struct rtw_ieee80211_hdr_3addr) + 6

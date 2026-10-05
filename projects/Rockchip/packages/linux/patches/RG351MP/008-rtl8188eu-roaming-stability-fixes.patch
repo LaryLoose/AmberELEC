@@ -1,0 +1,350 @@
+From: AmberELEC
+Subject: [PATCH] rtl8188eu: RG351MP USB WLAN roaming/stability fixes
+
+Combined fix set for the in-kernel Rockchip vendor rtl8188eu driver on the
+RG351MP's external RTL8188EUS USB dongle. Four independent changes that together
+stop the mesh-roaming collapse (link stalls until a physical USB re-plug) and let
+wpa_supplicant roam proactively between mesh APs:
+
+  1. os_dep/linux/usb_ops_linux.c: don't count unlinked RX urbs (-ECONNRESET/
+     -ENOENT) as continual I/O errors, so a single transient transfer fault no
+     longer latches bSurpriseRemoved and permanently kills all USB I/O.
+  2. os_dep/linux/ioctl_cfg80211.c + core/rtw_mlme.c + include/rtw_mlme.h:
+     implement the cfg80211 set_cqm_rssi_config op plus a watchdog RSSI check, so
+     wpa_supplicant's bgscan can enable signal monitoring and roam before the
+     link is lost instead of only after a beacon timeout.
+  3. include/rtw_mlme.h + os_dep/linux/ioctl_cfg80211.c: enable the previously
+     ifdef'd-out mlmepriv.not_indic_disco guard so a mid-connect disconnect
+     indication is not forwarded to cfg80211 (secondary net).
+  4. os_dep/linux/ioctl_cfg80211.c: reject a connect issued while already
+     _FW_LINKED|_FW_UNDER_LINKING with -EALREADY (like aircrack-ng rtl8188eus
+     v5.3.9), so a roam CONNECT never runs the disruptive select_and_join
+     teardown; wpa_supplicant then performs a clean disconnect+connect (primary
+     fix).
+
+The four sections MUST stay in this order: their hunk offsets in the shared
+files (ioctl_cfg80211.c, rtw_mlme.h) assume the earlier sections are applied
+first.
+
+
+# ===== don't count unlinked (-ECONNRESET/-ENOENT) RX urbs as continual I/O errors =====
+#
+# From: AmberELEC
+# Subject: [PATCH] rtl8188eu: don't count unlinked RX urbs as continual I/O errors
+#
+# usb_read_port_complete() increments dvobj->continual_io_error on ANY non-zero
+# urb->status and latches rtw_set_surprise_removed() once it exceeds
+# MAX_CONTINUAL_IO_ERR (4); after that the still-plugged dongle is treated as
+# physically removed and all USB I/O stops until a real re-enumeration (physical
+# replug) -- WiFi never self-heals.
+#
+# The driver submits NR_RECVBUFF (8) RX urbs to the bulk-IN endpoint at once. When
+# one genuine transfer fault occurs (e.g. -EPROTO during a scan/roam storm), the
+# host controller aborts the whole endpoint queue and completes the remaining
+# queued urbs with -ECONNRESET (urb unlinked). Each of those driver/HCD-side
+# cancellations is then counted as a separate I/O error, so a SINGLE transient
+# fault instantly pushes the counter past 4 and permanently bricks the link.
+#
+# Every mainline USB driver (rtl8150, pegasus, carl9170, rtlwifi, r8152, ...)
+# treats -ECONNRESET/-ENOENT as "urb was unlinked / disconnect in progress" and
+# returns without counting it. Do the same here: exclude those two statuses from
+# the continual_io_error accounting so a transient endpoint fault can no longer
+# latch bSurpriseRemoved. Genuine, persistent transfer errors (-EPROTO etc.) are
+# still counted and still escalate. Applies to both CONFIG_USE_USB_BUFFER_ALLOC_RX
+# variants of usb_read_port_complete().
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/usb_ops_linux.c	2026-09-19 10:50:49.997927032 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/usb_ops_linux.c	2026-09-19 10:50:50.337484934 +0200
+@@ -746,7 +746,13 @@
+ 
+ 		RTW_INFO("###=> usb_read_port_complete => urb.status(%d)\n", purb->status);
+ 
+-		if (rtw_inc_and_chk_continual_io_error(adapter_to_dvobj(padapter)) == _TRUE)
++		/* -ECONNRESET/-ENOENT mean the urb was unlinked (driver/HCD-side
++		 * cancel; a single transfer fault aborts the whole multi-urb RX
++		 * pipeline). Like every mainline USB driver, do NOT count these as
++		 * hardware I/O errors, otherwise one transient fault trips
++		 * continual_io_error and permanently latches bSurpriseRemoved. */
++		if (purb->status != -ECONNRESET && purb->status != -ENOENT
++			&& rtw_inc_and_chk_continual_io_error(adapter_to_dvobj(padapter)) == _TRUE)
+ 			rtw_set_surprise_removed(padapter);
+ 
+ 		switch (purb->status) {
+@@ -907,7 +913,13 @@
+ 
+ 		RTW_INFO("###=> usb_read_port_complete => urb.status(%d)\n", purb->status);
+ 
+-		if (rtw_inc_and_chk_continual_io_error(adapter_to_dvobj(padapter)) == _TRUE)
++		/* -ECONNRESET/-ENOENT mean the urb was unlinked (driver/HCD-side
++		 * cancel; a single transfer fault aborts the whole multi-urb RX
++		 * pipeline). Like every mainline USB driver, do NOT count these as
++		 * hardware I/O errors, otherwise one transient fault trips
++		 * continual_io_error and permanently latches bSurpriseRemoved. */
++		if (purb->status != -ECONNRESET && purb->status != -ENOENT
++			&& rtw_inc_and_chk_continual_io_error(adapter_to_dvobj(padapter)) == _TRUE)
+ 			rtw_set_surprise_removed(padapter);
+ 
+ 		switch (purb->status) {
+
+# ===== implement nl80211 CQM RSSI monitoring so wpa_supplicant bgscan can roam proactively =====
+#
+# From: AmberELEC
+# Subject: [PATCH] rtl8188eu: implement nl80211 CQM RSSI monitoring for roaming
+#
+# The Rockchip vendor rtl8188eu driver never implemented the cfg80211
+# set_cqm_rssi_config operation, so wpa_supplicant's "bgscan simple" fails with
+# "Failed to enable signal strength monitoring" and can therefore only react
+# AFTER the link is already lost (beacon timeout) instead of scanning/roaming
+# proactively while the current AP is still weakly reachable. On a device that
+# roams between mesh APs this produces multi-second connection drops.
+#
+# Add a minimal CQM implementation:
+#
+#   * cfg80211_rtw_set_cqm_rssi_config() stores the RSSI threshold and hysteresis
+#     requested by wpa_supplicant and enables monitoring.
+#   * rtw_cfg80211_cqm_rssi_check() is called from the existing 2s mlme watchdog
+#     (rtw_dynamic_check_timer_handlder); it compares the connected-AP signal
+#     (same value get_station reports to userspace) against the threshold and, on
+#     a hysteresis-guarded crossing, emits an NL80211_CQM_RSSI_THRESHOLD_EVENT
+#     LOW/HIGH via cfg80211_cqm_rssi_notify().
+#
+# This lets wpa_supplicant/bgscan trigger a scan when the signal drops below the
+# configured level and roam before the link breaks.
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h	2026-09-19 17:12:50.059408871 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h	2026-09-19 17:14:27.051811168 +0200
+@@ -588,6 +588,11 @@
+ 	sint	fw_state;	/* shall we protect this variable? maybe not necessarily... */
+ 	u8 bScanInProcess;
+ 	u8	to_join; /* flag */
++	/* nl80211 CQM RSSI monitoring (for wpa_supplicant bgscan roaming) */
++	s32 cqm_rssi_thold;
++	u32 cqm_rssi_hyst;
++	u8 cqm_rssi_enable;
++	int cqm_rssi_last_event;
+ #ifdef CONFIG_LAYER2_ROAMING
+ 	u8 to_roam; /* roaming trying times */
+ 	struct wlan_network *roam_network; /* the target of active roam */
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 17:12:50.065886971 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 17:14:27.055004769 +0200
+@@ -6842,6 +6842,68 @@
+ }
+ #endif
+ 
++static int cfg80211_rtw_set_cqm_rssi_config(struct wiphy *wiphy,
++		struct net_device *ndev, s32 rssi_thold, u32 rssi_hyst)
++{
++	_adapter *padapter = (_adapter *)rtw_netdev_priv(ndev);
++	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
++
++	pmlmepriv->cqm_rssi_thold = rssi_thold;
++	pmlmepriv->cqm_rssi_hyst = rssi_hyst;
++	pmlmepriv->cqm_rssi_last_event = -1;
++	pmlmepriv->cqm_rssi_enable = (rssi_thold == 0) ? 0 : 1;
++
++	RTW_INFO(FUNC_NDEV_FMT" thold=%d hyst=%u enable=%u\n", FUNC_NDEV_ARG(ndev),
++		rssi_thold, rssi_hyst, pmlmepriv->cqm_rssi_enable);
++
++	return 0;
++}
++
++/* Called periodically from the mlme watchdog; emits a cfg80211 CQM RSSI
++ * threshold event when the connected-AP signal crosses the configured
++ * threshold (+/- hysteresis). This is what lets wpa_supplicant's bgscan do
++ * proactive, signal-based roaming instead of only reconnecting after the
++ * link is already lost. */
++void rtw_cfg80211_cqm_rssi_check(_adapter *padapter)
++{
++	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
++	struct net_device *ndev = padapter->pnetdev;
++	s32 rssi_dbm;
++	int event;
++
++	if (!pmlmepriv->cqm_rssi_enable)
++		return;
++	if (!check_fwstate(pmlmepriv, WIFI_STATION_STATE))
++		return;
++	if (!check_fwstate(pmlmepriv, _FW_LINKED))
++		return;
++
++	rssi_dbm = translate_percentage_to_dbm(padapter->recvpriv.signal_strength);
++
++	if (rssi_dbm < pmlmepriv->cqm_rssi_thold)
++		event = NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW;
++	else
++		event = NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH;
++
++	if (event == pmlmepriv->cqm_rssi_last_event)
++		return;
++
++	/* hysteresis margin around the configured threshold */
++	if (event == NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW
++	    && rssi_dbm > pmlmepriv->cqm_rssi_thold - (s32)pmlmepriv->cqm_rssi_hyst)
++		return;
++	if (event == NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH
++	    && rssi_dbm < pmlmepriv->cqm_rssi_thold + (s32)pmlmepriv->cqm_rssi_hyst)
++		return;
++
++	pmlmepriv->cqm_rssi_last_event = event;
++
++	RTW_INFO(FUNC_NDEV_FMT" rssi=%d dBm -> %s\n", FUNC_NDEV_ARG(ndev), rssi_dbm,
++		event == NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW ? "LOW" : "HIGH");
++
++	cfg80211_cqm_rssi_notify(ndev, event, GFP_ATOMIC);
++}
++
+ static struct cfg80211_ops rtw_cfg80211_ops = {
+ 	.change_virtual_intf = cfg80211_rtw_change_iface,
+ 	.add_key = cfg80211_rtw_add_key,
+@@ -6861,6 +6923,7 @@
+ 	.set_tx_power = cfg80211_rtw_set_txpower,
+ 	.get_tx_power = cfg80211_rtw_get_txpower,
+ 	.set_power_mgmt = cfg80211_rtw_set_power_mgmt,
++	.set_cqm_rssi_config = cfg80211_rtw_set_cqm_rssi_config,
+ 	.set_pmksa = cfg80211_rtw_set_pmksa,
+ 	.del_pmksa = cfg80211_rtw_del_pmksa,
+ 	.flush_pmksa = cfg80211_rtw_flush_pmksa,
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/core/rtw_mlme.c	2026-09-19 17:12:50.072267671 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/core/rtw_mlme.c	2026-09-19 17:14:27.058236469 +0200
+@@ -3014,6 +3014,10 @@
+ 	#endif
+ }
+ 
++#ifdef CONFIG_IOCTL_CFG80211
++extern void rtw_cfg80211_cqm_rssi_check(_adapter *adapter);
++#endif
++
+ void rtw_dynamic_check_timer_handlder(_adapter *adapter)
+ {
+ 	if (!adapter)
+@@ -3031,6 +3035,10 @@
+ 
+ 	if (!is_drv_in_lps(adapter))
+ 		rtw_dynamic_chk_wk_cmd(adapter);
++
++#ifdef CONFIG_IOCTL_CFG80211
++	rtw_cfg80211_cqm_rssi_check(adapter);
++#endif
+ }
+ 
+ 
+
+# ===== enable not_indic_disco guard: don't forward the mid-connect disconnect (secondary net) =====
+#
+# From: AmberELEC
+# Subject: [PATCH] rtl8188eu: don't forward the mid-connect disconnect to cfg80211
+#
+# On a wpa_supplicant/CQM-driven roam (connected -> new BSS) the vendor driver
+# enters cfg80211_rtw_connect while still _FW_LINKED. rtw_select_and_join_from_
+# scanned_queue() then tears down the old association and calls
+# rtw_indicate_disconnect(), which reaches rtw_cfg80211_indicate_disconnect() and
+# emits cfg80211_disconnected()/connect_result() in the MIDDLE of the connect.
+# This zeroes wdev->ssid_len in the cfg80211 core; the subsequent connect_result
+# then fails its BSS lookup (WARN_ON(!bss) in __cfg80211_connect_result), returns
+# early and never sets wdev->current_bss. The following PTK NEW_KEY is rejected
+# ("WPA: Failed to set PTK ... key_flag=0xc"), the 4-Way handshake fails and the
+# link stalls until a re-plug.
+#
+# The driver already carries the fix used by newer rtl8188eus releases: a
+# mlmepriv.not_indic_disco flag that is raised for the duration of a cfg80211
+# connect and checked in rtw_cfg80211_indicate_disconnect() to suppress the
+# spurious event. In this tree the whole mechanism was compiled out behind
+# SUPPLICANT_RTK_VERSION_LOWER_THAN_JB42 (undefined). Newer drivers enable it
+# unconditionally for kernels >= 4.2 (RTW_CFG80211_BLOCK_DISCON_WHEN_CONNECT);
+# do the same here by dropping the ifdef gates around the flag, its set on
+# connect entry, its clear on connect exit and the guard in
+# rtw_cfg80211_indicate_disconnect(). The user-initiated disconnect path keeps
+# its (disabled) block, matching upstream >= 4.2 behaviour, so a real disconnect
+# is still reported. The flag is always cleared before cfg80211_rtw_connect
+# returns, so a genuine later disconnect always recovers.
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h	2026-09-19 17:52:45.308505718 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/include/rtw_mlme.h	2026-09-19 17:53:05.642778885 +0200
+@@ -607,9 +607,10 @@
+ 
+ 	u8	*nic_hdl;
+ 
+-#ifdef SUPPLICANT_RTK_VERSION_LOWER_THAN_JB42
++	/* set while a cfg80211 connect is in progress so a spurious
++	 * mid-connect disconnect indication is NOT forwarded to cfg80211
++	 * (mirrors newer rtl8188eus RTW_CFG80211_BLOCK_DISCON_WHEN_CONNECT) */
+ 	u8	not_indic_disco;
+-#endif
+ 	_list		*pscanned;
+ 	_queue	free_bss_pool;
+ 	_queue	scanned_queue;
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 17:52:45.310810218 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 17:53:05.650191585 +0200
+@@ -816,11 +816,7 @@
+ 	}
+ #endif /* CONFIG_P2P */
+ 
+-	#ifdef SUPPLICANT_RTK_VERSION_LOWER_THAN_JB42
+ 	if (!padapter->mlmepriv.not_indic_disco || padapter->ndev_unregistering) {
+-	#else
+-	{
+-	#endif
+ 		#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0) || defined(COMPAT_KERNEL_RELEASE)
+ 		RTW_INFO("pwdev->sme_state(b)=%d\n", pwdev->sme_state);
+ 
+@@ -3055,9 +3051,7 @@
+ 	struct security_priv *psecuritypriv = &padapter->securitypriv;
+ 	_queue *queue = &pmlmepriv->scanned_queue;
+ 
+-#ifdef SUPPLICANT_RTK_VERSION_LOWER_THAN_JB42
+ 	padapter->mlmepriv.not_indic_disco = _TRUE;
+-#endif
+ 
+ 	RTW_INFO("=>"FUNC_NDEV_FMT" - Start to Connection\n", FUNC_NDEV_ARG(ndev));
+ 	RTW_INFO("privacy=%d, key=%p, key_len=%d, key_idx=%d, auth_type=%d\n",
+@@ -3272,9 +3266,7 @@
+ exit:
+ 	RTW_INFO("<=%s, ret %d\n", __FUNCTION__, ret);
+ 
+-#ifdef SUPPLICANT_RTK_VERSION_LOWER_THAN_JB42
+ 	padapter->mlmepriv.not_indic_disco = _FALSE;
+-#endif
+ 
+ 	return ret;
+ }
+
+# ===== reject connect while already linked/linking with -EALREADY (primary fix) =====
+#
+# From: AmberELEC
+# Subject: [PATCH] rtl8188eu: reject connect while already linked/linking (-EALREADY)
+#
+# A wpa_supplicant/connman driven roam issues NL80211_CMD_CONNECT to the new
+# BSS while the driver is still _FW_LINKED to the old AP. The old vendor
+# driver runs the full rtw_set_802_11_connect() -> rtw_do_join()/to_join ->
+# rtw_select_and_join_from_scanned_queue() path, whose _FW_LINKED teardown
+# calls rtw_indicate_disconnect() -> cfg80211_disconnected() in the middle of
+# the connect. That zeroes wdev->ssid_len, so the subsequent connect_result
+# hits WARN_ON(!bss) in __cfg80211_connect_result(), leaves current_bss NULL,
+# the nl80211 core then rejects the PTK NEW_KEY ("WPA: Failed to set PTK"),
+# the 4-Way handshake fails and the link stalls until a USB re-plug.
+#
+# Newer rtl8188eus (aircrack-ng v5.3.9) reject such a redundant connect early
+# with -EALREADY when _FW_LINKED | _FW_UNDER_LINKING, so the disruptive
+# teardown never runs; wpa_supplicant then does a clean disconnect+connect.
+# Port that early return. (patch 010's not_indic_disco is only the secondary
+# net and does not cover this teardown, which runs from the cmd thread's
+# surveydone callback after the connect flag was already cleared.)
+
+--- a/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 18:16:12.410543333 +0200
++++ b/drivers/net/wireless/rockchip_wlan/rtl8188eu/os_dep/linux/ioctl_cfg80211.c	2026-09-19 18:16:12.427807133 +0200
+@@ -3064,6 +3064,15 @@
+ 		goto exit;
+ 	}
+ 
++	/* don't tear down an existing/pending association from a redundant
++	 * (e.g. roam) connect request; reject early like newer rtl8188eus so
++	 * the mid-connect rtw_indicate_disconnect never corrupts cfg80211 SME */
++	if (check_fwstate(pmlmepriv, _FW_LINKED | _FW_UNDER_LINKING) == _TRUE) {
++		ret = -EALREADY;
++		RTW_INFO("%s skip connect! fw_state=0x%x\n", __func__, pmlmepriv->fw_state);
++		goto exit;
++	}
++
+ #ifdef CONFIG_PLATFORM_MSTAR_SCAN_BEFORE_CONNECT
+ 	printk("MStar Android!\n");
+ 	if (adapter_wdev_data(padapter)->bandroid_scan == _FALSE) {
