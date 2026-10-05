@@ -1,0 +1,243 @@
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
+@@ -751,6 +751,37 @@
+ 				de-active = <0>;
+ 				pixelclk-active = <0>;
+ 			};
++			timing_50hz {
++				clock-frequency = <26400000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <295>;
++				hsync-len = <2>;
++				hback-porch = <119>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++			timing_70hz {
++				clock-frequency = <26400000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <56>;
++				hsync-len = <2>;
++				hback-porch = <56>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++
+ 		};
+ 	};
+ 
+@@ -841,6 +872,37 @@
+ 				de-active = <0>;
+ 				pixelclk-active = <0>;
+ 			};
++			timing_50hz {
++				clock-frequency = <26400000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <295>;
++				hsync-len = <2>;
++				hback-porch = <119>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++			timing_70hz {
++				clock-frequency = <26400000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <56>;
++				hsync-len = <2>;
++				hback-porch = <56>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++
+ 		};
+ 	};
+ };
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
+@@ -751,6 +751,37 @@
+ 				de-active = <0>;
+ 				pixelclk-active = <0>;
+ 			};
++			timing_50hz {
++				clock-frequency = <27500000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <207>;
++				hsync-len = <2>;
++				hback-porch = <90>;
++				vfront-porch = <18>;
++				vsync-len = <2>;
++				vback-porch = <86>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++			timing_70hz {
++				clock-frequency = <27500000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <72>;
++				hsync-len = <2>;
++				hback-porch = <72>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++
+ 		};
+ 	};
+ 
+@@ -841,6 +872,37 @@
+                                 de-active = <0>;
+                                 pixelclk-active = <0>;
+ 			};
++			timing_50hz {
++				clock-frequency = <27500000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <207>;
++				hsync-len = <2>;
++				hback-porch = <90>;
++				vfront-porch = <18>;
++				vsync-len = <2>;
++				vback-porch = <86>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++			timing_70hz {
++				clock-frequency = <27500000>;
++				hactive = <640>;
++				vactive = <480>;
++				hfront-porch = <72>;
++				hsync-len = <2>;
++				hback-porch = <72>;
++				vfront-porch = <13>;
++				vsync-len = <2>;
++				vback-porch = <5>;
++				hsync-active = <0>;
++				vsync-active = <0>;
++				de-active = <0>;
++				pixelclk-active = <0>;
++			};
++
+ 		};
+ 	};
+ };
+--- a/drivers/gpu/drm/panel/panel-simple.c
++++ b/drivers/gpu/drm/panel/panel-simple.c
+@@ -599,34 +599,38 @@
+ 	struct drm_connector *connector = panel->base.connector;
+ 	struct drm_device *drm = panel->base.drm;
+ 	struct drm_display_mode *mode;
+-	struct device_node *timings_np;
+-	int ret;
++	struct display_timings *timings;
++	int i, num = 0;
+ 
+-	timings_np = of_get_child_by_name(panel->dev->of_node,
+-					  "display-timings");
+-	if (!timings_np) {
+-		dev_dbg(panel->dev, "failed to find display-timings node\n");
++	timings = of_get_display_timings(panel->dev->of_node);
++	if (!timings) {
++		dev_dbg(panel->dev, "failed to find dts display timings\n");
+ 		return 0;
+ 	}
+ 
+-	of_node_put(timings_np);
+-	mode = drm_mode_create(drm);
+-	if (!mode)
+-		return 0;
++	/* Expose every display-timing (native + e.g. 50Hz) as a mode */
++	for (i = 0; i < timings->num_timings; i++) {
++		struct videomode vm;
++
++		if (videomode_from_timings(timings, &vm, i))
++			continue;
++
++		mode = drm_mode_create(drm);
++		if (!mode)
++			break;
++
++		drm_display_mode_from_videomode(&vm, mode);
++		drm_mode_set_name(mode);
++		if (i == timings->native_mode)
++			mode->type |= DRM_MODE_TYPE_PREFERRED;
+ 
+-	ret = of_get_drm_display_mode(panel->dev->of_node, mode,
+-				      OF_USE_NATIVE_MODE);
+-	if (ret) {
+-		dev_dbg(panel->dev, "failed to find dts display timings\n");
+-		drm_mode_destroy(drm, mode);
+-		return 0;
++		drm_mode_probed_add(connector, mode);
++		num++;
+ 	}
+ 
+-	drm_mode_set_name(mode);
+-	mode->type |= DRM_MODE_TYPE_PREFERRED;
+-	drm_mode_probed_add(connector, mode);
++	display_timings_release(timings);
+ 
+-	return 1;
++	return num;
+ }
+ 
+ static int panel_simple_regulator_enable(struct drm_panel *panel)
+--- a/drivers/gpu/drm/rockchip/dw-mipi-dsi.c
++++ b/drivers/gpu/drm/rockchip/dw-mipi-dsi.c
+@@ -1330,13 +1330,21 @@
+ static void dw_mipi_dsi_encoder_disable(struct drm_encoder *encoder)
+ {
+ 	struct dw_mipi_dsi *dsi = encoder_to_dsi(encoder);
++	struct drm_crtc *crtc = encoder->crtc;
++	bool warm_switch = false;
+ 
+-	if (dsi->panel)
++	/* Same-clock mode change (e.g. 60<->50Hz): keep the panel powered,
++	 * initialised and lit to avoid the backlight blink and DCS re-init. */
++	if (crtc && crtc->state && crtc->state->active && dsi->mode.clock &&
++	    crtc->state->adjusted_mode.clock == dsi->mode.clock)
++		warm_switch = true;
++
++	if (dsi->panel && !warm_switch)
+ 		drm_panel_disable(dsi->panel);
+ 
+ 	dw_mipi_dsi_disable(dsi);
+ 
+-	if (dsi->panel)
++	if (dsi->panel && !warm_switch)
+ 		drm_panel_unprepare(dsi->panel);
+ 
+ 	dw_mipi_dsi_post_disable(dsi);
