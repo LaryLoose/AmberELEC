@@ -1,0 +1,169 @@
+--- a/drivers/input/joystick/odroidgo3-joypad.c
++++ b/drivers/input/joystick/odroidgo3-joypad.c
+@@ -312,10 +312,10 @@
+ 	int value;
+ 
+ 	if (joypad_amux_select(amux, adc->amux_ch, joypad))
+-		return 0;
++		return -1;
+ 
+ 	if (iio_read_channel_processed(amux->iio_ch, &value))
+-		return 0;
++		return -1;
+ 
+ 	value *= adc->scale;
+ 
+@@ -469,7 +469,7 @@
+ 			struct bt_adc *adc = &joypad->adcs[nbtn];
+ 
+ 			adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-			if (!adc->value) {
++			if (adc->value < 0) {
+ 				dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+ 					__func__, nbtn);
+ 				continue;
+@@ -509,6 +509,62 @@
+ /*
+  * ATTRIBUTES:
+  *
++ * /sys/devices/platform/odroidgo2_joypad/adc_tuning [rw]
++ *
++ * echo [axis] [tuning_p] [tuning_n] > adc_tuning
++ * cat adc_tuning : per-axis positive/negative gain (percent, report = adc*t/100)
++ */
++/*----------------------------------------------------------------------------*/
++static ssize_t joypad_store_adc_tuning(struct device *dev,
++				      struct device_attribute *attr,
++				      const char *buf,
++				      size_t count)
++{
++	struct platform_device *pdev  = to_platform_device(dev);
++	struct joypad *joypad = platform_get_drvdata(pdev);
++	int idx, p, n;
++
++	if (sscanf(buf, "%d %d %d", &idx, &p, &n) != 3)
++		return -EINVAL;
++	if (idx < 0 || idx >= joypad->amux_count)
++		return -EINVAL;
++
++	mutex_lock(&joypad->lock);
++	joypad->adcs[idx].tuning_p = p;
++	joypad->adcs[idx].tuning_n = n;
++	mutex_unlock(&joypad->lock);
++
++	return count;
++}
++
++/*----------------------------------------------------------------------------*/
++static ssize_t joypad_show_adc_tuning(struct device *dev,
++				     struct device_attribute *attr,
++				     char *buf)
++{
++	struct platform_device *pdev  = to_platform_device(dev);
++	struct joypad *joypad = platform_get_drvdata(pdev);
++	int nbtn;
++	ssize_t pos;
++
++	for (nbtn = 0, pos = 0; nbtn < joypad->amux_count; nbtn++) {
++		struct bt_adc *adc = &joypad->adcs[nbtn];
++		pos += sprintf(&buf[pos],
++			"adc[%d]->tuning_p = %d, tuning_n = %d\n",
++			nbtn, adc->tuning_p, adc->tuning_n);
++	}
++	return pos;
++}
++
++/*----------------------------------------------------------------------------*/
++static DEVICE_ATTR(adc_tuning, S_IWUSR | S_IRUGO,
++		   joypad_show_adc_tuning,
++		   joypad_store_adc_tuning);
++
++/*----------------------------------------------------------------------------*/
++/*
++ * ATTRIBUTES:
++ *
+  * /sys/devices/platform/odroidgo2_joypad/amux_debug [rw]
+  *
+  * echo [debug channel] > amux_debug
+@@ -695,6 +751,7 @@
+ 	&dev_attr_adc_flat.attr,
+ 	&dev_attr_enable.attr,
+ 	&dev_attr_adc_cal.attr,
++	&dev_attr_adc_tuning.attr,
+ 	&dev_attr_amux_debug.attr,
+ 	&dev_attr_rumble_period.attr,
+ 	&dev_attr_rumble_boost_strong.attr,
+@@ -742,7 +799,7 @@
+ 		struct bt_adc *adc = &joypad->adcs[nbtn];
+ 
+ 		adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-		if (!adc->value) {
++		if (adc->value < 0) {
+ 			dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+ 				__func__, nbtn);
+ 			continue;
+@@ -801,7 +858,7 @@
+ 		struct bt_adc *adc = &joypad->adcs[nbtn];
+ 
+ 		adc->value = joypad_adc_read(joypad->amux, adc, joypad);
+-		if (!adc->value) {
++		if (adc->value < 0) {
+ 			dev_err(joypad->dev, "%s : saradc channels[%d]!\n",
+ 				__func__, nbtn);
+ 			continue;
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux.dts
+@@ -120,17 +120,17 @@
+ 		  p = positive direction, n = negative direction
+ 		  report value = (real_adc_data * tuning_value) / 100
+ 		*/
+-		abs_x-p-tuning = <200>;
+-		abs_x-n-tuning = <200>;
++		abs_x-p-tuning = <100>;
++		abs_x-n-tuning = <100>;
+ 
+-		abs_y-p-tuning = <200>;
+-		abs_y-n-tuning = <200>;
++		abs_y-p-tuning = <100>;
++		abs_y-n-tuning = <100>;
+ 
+-		abs_rx-p-tuning = <200>;
+-		abs_rx-n-tuning = <200>;
++		abs_rx-p-tuning = <100>;
++		abs_rx-n-tuning = <100>;
+ 
+-		abs_ry-p-tuning = <200>;
+-		abs_ry-n-tuning = <200>;
++		abs_ry-p-tuning = <100>;
++		abs_ry-n-tuning = <100>;
+ 
+ 		/* poll device interval (ms), adc read interval */
+ 		poll-interval = <10>;
+--- a/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3326-rg351mp-linux-timing_fix.dts
+@@ -120,17 +120,17 @@
+ 		  p = positive direction, n = negative direction
+ 		  report value = (real_adc_data * tuning_value) / 100
+ 		*/
+-		abs_x-p-tuning = <200>;
+-		abs_x-n-tuning = <200>;
++		abs_x-p-tuning = <100>;
++		abs_x-n-tuning = <100>;
+ 
+-		abs_y-p-tuning = <200>;
+-		abs_y-n-tuning = <200>;
++		abs_y-p-tuning = <100>;
++		abs_y-n-tuning = <100>;
+ 
+-		abs_rx-p-tuning = <200>;
+-		abs_rx-n-tuning = <200>;
++		abs_rx-p-tuning = <100>;
++		abs_rx-n-tuning = <100>;
+ 
+-		abs_ry-p-tuning = <200>;
+-		abs_ry-n-tuning = <200>;
++		abs_ry-p-tuning = <100>;
++		abs_ry-n-tuning = <100>;
+ 
+ 		/* poll device interval (ms), adc read interval */
+ 		poll-interval = <10>;
