@@ -1,0 +1,61 @@
+--- a/src/service.c	2026-09-20 13:59:41.083087783 +0200
++++ b/src/service.c	2026-09-20 13:59:41.075318883 +0200
+@@ -3510,12 +3510,18 @@
+ 
+ 	/*
+ 	 * Only user interaction should get VPN or WIFI connected in failure
+-	 * state.
++	 * state. Exception: a WiFi service that failed for a transient reason
++	 * (e.g. roaming assoc/beacon loss, connect timeout) must still be
++	 * allowed to auto-reconnect; only permanent auth failures (wrong key)
++	 * keep blocking auto-connect until the user intervenes.
+ 	 */
+ 	if (service->state == CONNMAN_SERVICE_STATE_FAILURE &&
+ 				reason != CONNMAN_SERVICE_CONNECT_REASON_USER &&
+ 				(service->type == CONNMAN_SERVICE_TYPE_VPN ||
+-				service->type == CONNMAN_SERVICE_TYPE_WIFI))
++				(service->type == CONNMAN_SERVICE_TYPE_WIFI &&
++				(service->error == CONNMAN_SERVICE_ERROR_INVALID_KEY ||
++				service->error == CONNMAN_SERVICE_ERROR_AUTH_FAILED ||
++				service->error == CONNMAN_SERVICE_ERROR_LOGIN_FAILED))))
+ 		return;
+ 
+ 	/*
+@@ -4033,6 +4039,15 @@
+ 	return true;
+ }
+ 
++static bool is_transient_wifi_failure(struct connman_service *service)
++{
++	return service->type == CONNMAN_SERVICE_TYPE_WIFI &&
++		service->state == CONNMAN_SERVICE_STATE_FAILURE &&
++		service->error != CONNMAN_SERVICE_ERROR_INVALID_KEY &&
++		service->error != CONNMAN_SERVICE_ERROR_AUTH_FAILED &&
++		service->error != CONNMAN_SERVICE_ERROR_LOGIN_FAILED;
++}
++
+ static bool is_ignore(struct connman_service *service)
+ {
+ 	if (!service->autoconnect)
+@@ -4045,7 +4060,8 @@
+ 	if (service->ignore)
+ 		return true;
+ 
+-	if (service->state == CONNMAN_SERVICE_STATE_FAILURE)
++	if (service->state == CONNMAN_SERVICE_STATE_FAILURE &&
++			!is_transient_wifi_failure(service))
+ 		return true;
+ 
+ 	if (!is_ipconfig_usable(service))
+@@ -4275,8 +4291,9 @@
+ 			return autoconnecting;
+ 		}
+ 
+-		if (is_ignore(service) || service->state !=
+-				CONNMAN_SERVICE_STATE_IDLE)
++		if (is_ignore(service) ||
++				(service->state != CONNMAN_SERVICE_STATE_IDLE &&
++				!is_transient_wifi_failure(service)))
+ 			continue;
+ 
+ 		if (autoconnect_already_connecting(service, autoconnecting)) {
