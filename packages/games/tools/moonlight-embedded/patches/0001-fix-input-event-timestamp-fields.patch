@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: AmberELEC <devnull@amberelec.org>
+Date: Sat, 22 Aug 2026 00:00:00 +0000
+Subject: [PATCH] evdev: use current input_event timestamp member
+
+Linux input_event exposes its timestamp through the time member. The old
+input_event_sec and input_event_usec compatibility names are not available
+with the kernel headers used by AmberELEC.
+---
+ src/input/evdev.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/input/evdev.c b/src/input/evdev.c
+--- a/src/input/evdev.c
++++ b/src/input/evdev.c
+@@ -442,1 +442,1 @@
+-          dev->touchDownTime.tv_sec = ev->input_event_sec;
++          dev->touchDownTime.tv_sec = ev->time.tv_sec;
+@@ -443,1 +443,1 @@
+-          dev->touchDownTime.tv_usec = ev->input_event_usec;
++          dev->touchDownTime.tv_usec = ev->time.tv_usec;
+@@ -450,1 +450,1 @@
+-              eventTime.tv_sec = ev->input_event_sec;
++              eventTime.tv_sec = ev->time.tv_sec;
+@@ -451,1 +451,1 @@
+-              eventTime.tv_usec = ev->input_event_usec;
++              eventTime.tv_usec = ev->time.tv_usec;
+@@ -519,1 +519,1 @@
+-          dev->btnDownTime.tv_sec = ev->input_event_sec;
++          dev->btnDownTime.tv_sec = ev->time.tv_sec;
+@@ -520,1 +520,1 @@
+-          dev->btnDownTime.tv_usec = ev->input_event_usec;
++          dev->btnDownTime.tv_usec = ev->time.tv_usec;
+@@ -526,1 +526,1 @@
+-          eventTime.tv_sec = ev->input_event_sec;
++          eventTime.tv_sec = ev->time.tv_sec;
+@@ -527,1 +527,1 @@
+-          eventTime.tv_usec = ev->input_event_usec;
++          eventTime.tv_usec = ev->time.tv_usec;
+--
+2.39.2

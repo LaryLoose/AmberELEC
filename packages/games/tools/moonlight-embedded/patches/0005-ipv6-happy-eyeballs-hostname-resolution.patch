@@ -1,0 +1,254 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: AmberELEC <devnull@amberelec.org>
+Date: Sat, 29 Aug 2026 00:00:00 +0000
+Subject: [PATCH] net: Happy Eyeballs hostname resolution for stream connect
+
+Streaming to a hostname that resolves to multiple addresses (several IPv6
+plus IPv4, as published by Fritzbox DNS/mDNS) stalled: resolveHostName()
+probed each resolved address serially with a 3s (TEST_PORT_TIMEOUT_SEC)
+blocking connect. Unreachable IPv6 addresses therefore blocked ~3s each
+before IPv4 was tried, causing "Connection timed out after 3 seconds" and
+a subsequent RTSP reset (104), while an IPv4 literal connected instantly.
+
+Replace the serial probe loop with a simplified Happy Eyeballs (RFC 8305)
+racer: all candidates are probed with staggered non-blocking connects and
+the first to complete wins. IPv4 is ordered slightly ahead of IPv6, and
+unusable fe80::/10 link-local addresses (no scope id) are skipped. Pure
+IPv4 and pure IPv6 hosts keep their previous single-address behaviour.
+---
+ third_party/moonlight-common-c/src/PlatformSockets.c | 179 ++++++++++++++++++--
+ 1 file changed, 174 insertions(+), 5 deletions(-)
+
+--- a/third_party/moonlight-common-c/src/PlatformSockets.c	2026-08-29 18:32:39.480516547 +0200
++++ b/third_party/moonlight-common-c/src/PlatformSockets.c	2026-08-29 18:34:19.134189104 +0200
+@@ -632,9 +632,178 @@
+     }
+ }
+ 
++// Simplified Happy Eyeballs (RFC 8305) address racing. When a host resolves to several
++// addresses (commonly multiple IPv6 plus IPv4), probing them serially with a multi-second
++// timeout each stalls the whole connection whenever some IPv6 addresses are unreachable.
++// Instead, start non-blocking connects to all candidates in a staggered fashion and pick
++// the first one that completes, so an unreachable address costs at most one stagger
++// interval rather than the full TEST_PORT_TIMEOUT_SEC.
++#define HAPPY_EYEBALLS_MAX_CANDIDATES 16
++#define HAPPY_EYEBALLS_STAGGER_MS     250
++#define HAPPY_EYEBALLS_TIMEOUT_MS     (TEST_PORT_TIMEOUT_SEC * 1000)
++
++// fe80::/10 link-local addresses are only routable with a matching interface scope id.
++static bool isUnusableLinkLocalV6(const struct addrinfo* ai) {
++#ifdef AF_INET6
++    if (ai->ai_family == AF_INET6) {
++        const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)ai->ai_addr;
++        if (sin6->sin6_addr.s6_addr[0] == 0xFE && (sin6->sin6_addr.s6_addr[1] & 0xC0) == 0x80) {
++            return sin6->sin6_scope_id == 0;
++        }
++    }
++#endif
++    return false;
++}
++
++static int happyEyeballsConnect(struct addrinfo* res, unsigned short port,
++                                struct sockaddr_storage* addr, SOCKADDR_LEN* addrLen) {
++    struct addrinfo* candidates[HAPPY_EYEBALLS_MAX_CANDIDATES];
++    SOCKET socks[HAPPY_EYEBALLS_MAX_CANDIDATES];
++    struct pollfd pfds[HAPPY_EYEBALLS_MAX_CANDIDATES];
++    int candidateCount = 0;
++    int launched = 0;
++    int winner = -1;
++    int pass, i;
++    uint64_t deadline;
++
++    // Order candidates with IPv4 slightly preferred, then IPv6, skipping unusable
++    // link-local addresses that would only waste a probe slot.
++    for (pass = 0; pass < 2; pass++) {
++        int wantFamily = (pass == 0) ? AF_INET : AF_INET6;
++        struct addrinfo* ai;
++        for (ai = res; ai != NULL && candidateCount < HAPPY_EYEBALLS_MAX_CANDIDATES; ai = ai->ai_next) {
++            if (ai->ai_family != wantFamily) {
++                continue;
++            }
++            if (isUnusableLinkLocalV6(ai)) {
++                continue;
++            }
++            candidates[candidateCount++] = ai;
++        }
++    }
++
++    if (candidateCount == 0) {
++        return -1;
++    }
++
++    for (i = 0; i < candidateCount; i++) {
++        socks[i] = INVALID_SOCKET;
++    }
++
++    deadline = PltGetMillis() + HAPPY_EYEBALLS_TIMEOUT_MS;
++
++    while (winner < 0) {
++        int64_t remaining = (int64_t)(deadline - PltGetMillis());
++        int pollTimeout;
++        int nfds;
++
++        // Launch the next candidate if it's time (or nothing is in flight yet).
++        if (launched < candidateCount) {
++            SOCKET s = createSocket(candidates[launched]->ai_family, SOCK_STREAM, IPPROTO_TCP, true);
++            if (s != INVALID_SOCKET) {
++                LC_SOCKADDR sa;
++                memcpy(&sa, candidates[launched]->ai_addr, candidates[launched]->ai_addrlen);
++                SET_PORT(&sa, port);
++                if (connect(s, (struct sockaddr*)&sa, (SOCKADDR_LEN)candidates[launched]->ai_addrlen) < 0) {
++                    int cerr = (int)LastSocketError();
++                    if (cerr != EWOULDBLOCK && cerr != EAGAIN && cerr != EINPROGRESS) {
++                        // Immediate failure (e.g. no route) - drop this candidate.
++                        closeSocket(s);
++                        s = INVALID_SOCKET;
++                    }
++                }
++            }
++            socks[launched] = s;
++            launched++;
++        }
++
++        // Build the poll set from all in-flight sockets.
++        nfds = 0;
++        for (i = 0; i < launched; i++) {
++            if (socks[i] != INVALID_SOCKET) {
++                pfds[nfds].fd = socks[i];
++                pfds[nfds].events = POLLOUT;
++                pfds[nfds].revents = 0;
++                nfds++;
++            }
++        }
++
++        if (nfds == 0) {
++            if (launched >= candidateCount) {
++                // Everything failed immediately; nothing left to wait for.
++                break;
++            }
++            // No sockets in flight yet but more to launch: respect the stagger delay.
++            if (remaining <= 0) {
++                break;
++            }
++            PltSleepMs(HAPPY_EYEBALLS_STAGGER_MS);
++            continue;
++        }
++
++        if (remaining <= 0) {
++            break;
++        }
++
++        // Wait one stagger interval if there are more candidates to launch,
++        // otherwise wait for the remaining overall time.
++        if (launched < candidateCount) {
++            pollTimeout = HAPPY_EYEBALLS_STAGGER_MS;
++        }
++        else {
++            pollTimeout = (int)remaining;
++        }
++
++        if (pollSockets(pfds, nfds, pollTimeout) > 0) {
++            for (i = 0; i < nfds; i++) {
++                if (pfds[i].revents & (POLLOUT | POLLERR)) {
++                    int soErr = 0;
++                    SOCKADDR_LEN len = sizeof(soErr);
++                    int j;
++
++                    getsockopt(pfds[i].fd, SOL_SOCKET, SO_ERROR, (char*)&soErr, &len);
++                    if (soErr == 0 && !(pfds[i].revents & POLLERR)) {
++                        // Winner - locate its candidate index and stop.
++                        for (j = 0; j < launched; j++) {
++                            if (socks[j] == pfds[i].fd) {
++                                winner = j;
++                                break;
++                            }
++                        }
++                        break;
++                    }
++                    else {
++                        // This candidate failed - close and forget it.
++                        for (j = 0; j < launched; j++) {
++                            if (socks[j] == pfds[i].fd) {
++                                closeSocket(socks[j]);
++                                socks[j] = INVALID_SOCKET;
++                                break;
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    if (winner >= 0) {
++        memcpy(addr, candidates[winner]->ai_addr, candidates[winner]->ai_addrlen);
++        *addrLen = (SOCKADDR_LEN)candidates[winner]->ai_addrlen;
++    }
++
++    for (i = 0; i < launched; i++) {
++        if (socks[i] != INVALID_SOCKET) {
++            closeSocket(socks[i]);
++        }
++    }
++
++    return winner >= 0 ? 0 : -1;
++}
++
+ int resolveHostName(const char* host, int family, int tcpTestPort, struct sockaddr_storage* addr, SOCKADDR_LEN* addrLen)
+ {
+-    struct addrinfo hints, *res, *currentAddr;
++    struct addrinfo hints, *res;
+     int err;
+     bool needsFallbackV4 = false;
+ 
+@@ -673,34 +842,27 @@
+     }
+ #endif
+ 
+-    for (currentAddr = res; currentAddr != NULL; currentAddr = currentAddr->ai_next) {
+-        // Use the test port to ensure this address is working if:
+-        // a) We have multiple addresses
+-        // b) The caller asked us to test even with a single address
+-        // c) We got an IPv6 address synthesized from an IPv4 address
+-        if (tcpTestPort != 0 && (res->ai_next != NULL || (tcpTestPort & TCP_PORT_FLAG_ALWAYS_TEST) || needsFallbackV4)) {
+-            SOCKET testSocket = connectTcpSocket((struct sockaddr_storage*)currentAddr->ai_addr,
+-                                                 (SOCKADDR_LEN)currentAddr->ai_addrlen,
+-                                                 tcpTestPort & TCP_PORT_MASK,
+-                                                 TEST_PORT_TIMEOUT_SEC);
+-            if (testSocket == INVALID_SOCKET) {
+-                // Try the next address
+-                continue;
+-            }
+-            else {
+-                closeSocket(testSocket);
+-            }
++    // Use the test port to ensure the chosen address is reachable if:
++    // a) We have multiple addresses
++    // b) The caller asked us to test even with a single address
++    // c) We got an IPv6 address synthesized from an IPv4 address
++    if (tcpTestPort != 0 && (res->ai_next != NULL || (tcpTestPort & TCP_PORT_FLAG_ALWAYS_TEST) || needsFallbackV4)) {
++        // Race all candidates in parallel (Happy Eyeballs) and pick the fastest to
++        // respond, instead of blocking TEST_PORT_TIMEOUT_SEC on each unreachable address.
++        err = happyEyeballsConnect(res, (unsigned short)(tcpTestPort & TCP_PORT_MASK), addr, addrLen);
++        freeaddrinfo(res);
++        if (err == 0) {
++            return 0;
+         }
+-
+-        memcpy(addr, currentAddr->ai_addr, currentAddr->ai_addrlen);
+-        *addrLen = (SOCKADDR_LEN)currentAddr->ai_addrlen;
+-
++    }
++    else {
++        // Single address and no reachability test requested: use the first result.
++        memcpy(addr, res->ai_addr, res->ai_addrlen);
++        *addrLen = (SOCKADDR_LEN)res->ai_addrlen;
+         freeaddrinfo(res);
+         return 0;
+     }
+ 
+-    freeaddrinfo(res);
+-
+     if (needsFallbackV4) {
+         // Fallback to IPv4-only if we didn't find a working address (see comment above)
+         return resolveHostName(host, AF_INET, tcpTestPort, addr, addrLen);

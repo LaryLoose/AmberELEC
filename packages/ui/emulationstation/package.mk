@@ -60,6 +60,26 @@ makeinstall_target() {
 	ln -sf /usr/config/emulationstation/es_systems.cfg ${INSTALL}/etc/emulationstation/es_systems.cfg
 
         cp -rf ${PKG_DIR}/config/*.cfg ${INSTALL}/usr/config/emulationstation
+
+	# Expose the Moonlight controller-layout option in the ES options menu
+	sed -i '/^<features>/a\
+        <emulator name="Moonlight">\
+                <features>\
+                        <feature name="controller layout">\
+                                <choice name="Xbox" value="xbox"/>\
+                                <choice name="Xbox - swap shoulders / triggers" value="xbox_swap_shoulders_triggers"/>\
+                                <choice name="Nintendo" value="nintendo"/>\
+                        </feature>\
+                </features>\
+        </emulator>' ${INSTALL}/usr/config/emulationstation/es_features.cfg
+
+	# Expose the PSX region / system type (Auto/PAL/NTSC) option for retrorun + pcsx_rearmed.
+	# Auto lets pcsx_rearmed autodetect the region from the disc; PAL forces 50Hz, NTSC forces 60Hz.
+	sed -i '/<feature name="psx cpu clock">/i\
+					<feature name="system type" description="Force the PSX region. Auto detects it from the disc.">\
+						<choice name="PAL (50Hz)" value="PAL"/>\
+						<choice name="NTSC (60Hz)" value="NTSC"/>\
+					</feature>' ${INSTALL}/usr/config/emulationstation/es_features.cfg
 }
 
 post_install() {

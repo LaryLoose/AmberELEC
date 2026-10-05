@@ -120,6 +120,26 @@ if hint_should_run "distribution"; then
     rsync -a /usr/config/locale/ /storage/.config/emulationstation/locale/ &
   fi
 
+  # Seed Moonlight config + launcher
+  if [ -d /usr/config/moonlight ]; then
+    mkdir -p /storage/.config/moonlight
+    if [ ! -f /storage/.config/moonlight/moonlight.conf ]; then
+      cp /usr/config/moonlight/moonlight.conf /storage/.config/moonlight/moonlight.conf
+    fi
+    if grep -q '@MWIDTH@' /storage/.config/moonlight/moonlight.conf 2>/dev/null; then
+      MRES=$(tr ',' ' ' < /sys/class/graphics/fb0/virtual_size 2>/dev/null)
+      MW=${MRES%% *}; MH=${MRES##* }
+      [ -z "${MW}" ] && MW=1280
+      [ -z "${MH}" ] && MH=720
+      sed -i "s/@MWIDTH@/${MW}/g; s/@MHEIGHT@/${MH}/g" /storage/.config/moonlight/moonlight.conf
+    fi
+    mkdir -p /storage/roms/moonlight
+    if [ ! -f /storage/roms/moonlight/Moonlight.sh ]; then
+      cp /usr/config/moonlight/Moonlight.sh /storage/roms/moonlight/Moonlight.sh
+      chmod +x /storage/roms/moonlight/Moonlight.sh
+    fi
+  fi
+
   # Wait for the rsync processes to finish.
   wait
   mark_hint_done "distribution"

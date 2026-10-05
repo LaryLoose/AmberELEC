@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: AmberELEC <devnull@amberelec.org>
+Date: Sat, 22 Aug 2026 00:00:00 +0000
+Subject: [PATCH] rk: use MPP output timeout instead of deprecated block control
+
+MPP marks MPP_SET_OUTPUT_BLOCK as deprecated and prints a runtime notice.
+Use MPP_SET_OUTPUT_TIMEOUT (parameter type RK_S64) with MPP_POLL_BLOCK to
+request the same blocking read without the deprecation warning.
+---
+ src/video/rk.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/video/rk.c b/src/video/rk.c
+--- a/src/video/rk.c
++++ b/src/video/rk.c
+@@ -573,8 +573,8 @@
+   }
+ 
+   // set blocked read on Frame Thread
+-  param = MPP_POLL_BLOCK;
+-  ret = mpi_api->control(mpi_ctx, MPP_SET_OUTPUT_BLOCK, &param);
++  RK_S64 timeout = MPP_POLL_BLOCK;
++  ret = mpi_api->control(mpi_ctx, MPP_SET_OUTPUT_TIMEOUT, &timeout);
+   assert(!ret);
+ 
+   pthread_mutex_init(&mutex, NULL);

@@ -1,0 +1,303 @@
+--- /dev/null
++++ b/es-app/src/guis/GuiGameStreaming.h
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++// Copyright (C) 2026-present AmberELEC (https://github.com/AmberELEC)
++//
++// Native EmulationStation front-end for the Moonlight Embedded client.
++// Lives under Game Settings -> Tools and drives the "moonlight" CLI to set the
++// host, pair, import the streamed game library and quit a running session.
++#pragma once
++
++#include "guis/GuiSettings.h"
++
++class Window;
++
++class GuiGameStreaming : public GuiSettings
++{
++public:
++	static void show(Window* window);
++
++private:
++	explicit GuiGameStreaming(Window* window);
++
++	static std::string host();
++	static void promptHost(Window* window);
++	static void pairWithHost(Window* window);
++	static void refreshLibrary(Window* window);
++	static void quitSession(Window* window);
++	static void resetPairing(Window* window);
++};
+--- /dev/null
++++ b/es-app/src/guis/GuiGameStreaming.cpp
+@@ -0,0 +1,240 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++// Copyright (C) 2026-present AmberELEC (https://github.com/AmberELEC)
++
++#include "guis/GuiGameStreaming.h"
++
++#include <algorithm>
++#include <cctype>
++#include <cstdio>
++#include <cstdlib>
++#include <ctime>
++#include <fstream>
++#include <functional>
++#include <string>
++#include <vector>
++
++#include "LocaleES.h"
++#include "Log.h"
++#include "SystemConf.h"
++#include "Window.h"
++#include "guis/GuiMsgBox.h"
++#include "guis/GuiTextEditPopupKeyboard.h"
++#include "utils/Platform.h"
++
++namespace
++{
++	const std::string HOST_KEY = "streaming.host";
++	const std::string ROM_DIR  = "/storage/roms/moonlight";
++
++	// Run a shell command, invoking cb for each stdout line. Returns exit status.
++	int runShell(const std::string& cmd, const std::function<void(const std::string&)>& cb = nullptr)
++	{
++		FILE* pipe = popen(cmd.c_str(), "r");
++		if (pipe == nullptr)
++			return -1;
++		char buffer[1024];
++		while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
++		{
++			if (cb)
++			{
++				std::string line(buffer);
++				while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
++					line.pop_back();
++				cb(line);
++			}
++		}
++		return pclose(pipe);
++	}
++
++	// Wrap a value in single quotes for safe use inside a shell command.
++	std::string shellQuote(const std::string& s)
++	{
++		std::string out = "'";
++		for (char c : s)
++			out += (c == '\'') ? std::string("'\\''") : std::string(1, c);
++		out += "'";
++		return out;
++	}
++
++	std::string xmlEscape(const std::string& s)
++	{
++		std::string out;
++		for (char c : s)
++		{
++			switch (c)
++			{
++				case '&': out += "&amp;"; break;
++				case '<': out += "&lt;"; break;
++				case '>': out += "&gt;"; break;
++				case '"': out += "&quot;"; break;
++				default: out += c;
++			}
++		}
++		return out;
++	}
++
++	// Turn a "3. Big Buck Bunny" list line into its title.
++	bool parseAppLine(const std::string& line, std::string* title)
++	{
++		std::string::size_type dot = line.find(". ");
++		if (dot == std::string::npos || dot == 0)
++			return false;
++		for (std::string::size_type i = 0; i < dot; ++i)
++			if (!std::isdigit((unsigned char) line[i]))
++				return false;
++		*title = line.substr(dot + 2);
++		while (!title->empty() && (title->back() == '\r' || title->back() == ' '))
++			title->pop_back();
++		return !title->empty();
++	}
++}
++
++std::string GuiGameStreaming::host()
++{
++	return SystemConf::getInstance()->get(HOST_KEY);
++}
++
++void GuiGameStreaming::show(Window* window)
++{
++	window->pushGui(new GuiGameStreaming(window));
++}
++
++GuiGameStreaming::GuiGameStreaming(Window* window)
++	: GuiSettings(window, _("GAME STREAMING"))
++{
++	addGroup(_("CONNECTION"));
++
++	const std::string h = host();
++	addEntry(_("HOST ADDRESS") + " : " + (h.empty() ? _("(auto / mDNS)") : h), true,
++		[window] { promptHost(window); });
++
++	addGroup(_("LIBRARY"));
++
++	addEntry(_("REFRESH GAME LIST"), false, [window] { refreshLibrary(window); });
++	addEntry(_("PAIR WITH HOST"),    false, [window] { pairWithHost(window); });
++	addEntry(_("QUIT RUNNING GAME"), false, [window] { quitSession(window); });
++	addEntry(_("RESET PAIRING"),     false, [window] { resetPairing(window); });
++}
++
++void GuiGameStreaming::promptHost(Window* window)
++{
++	window->pushGui(new GuiTextEditPopupKeyboard(window, _("HOST ADDRESS"), host(),
++		[](const std::string& value)
++		{
++			SystemConf::getInstance()->set(HOST_KEY, value);
++			SystemConf::getInstance()->saveSystemConf();
++		},
++		false));
++}
++
++void GuiGameStreaming::pairWithHost(Window* window)
++{
++	const std::string h = host();
++	if (h.empty())
++	{
++		window->pushGui(new GuiMsgBox(window, _("Set the host address first.")));
++		return;
++	}
++
++	srand((unsigned) time(nullptr));
++	char pin[5];
++	snprintf(pin, sizeof(pin), "%04d", rand() % 10000);
++	const std::string pinStr = pin;
++
++	window->pushGui(new GuiMsgBox(window,
++		_("Pairing PIN:") + " " + pinStr + "\n" +
++		_("Press OK, then enter this PIN on your host when it asks."),
++		_("OK"), [window, h, pinStr]
++		{
++			const std::string cmd = "moonlight pair -pin " + pinStr + " " + shellQuote(h) + " 2>&1";
++			bool paired = false;
++			runShell(cmd, [&paired](const std::string& line)
++			{
++				if (line.find("Succesfully paired") != std::string::npos)
++					paired = true;
++			});
++			window->pushGui(new GuiMsgBox(window, paired
++				? _("Successfully paired with the host.")
++				: _("Pairing failed. Check the host address and try again.")));
++		},
++		_("CANCEL"), nullptr));
++}
++
++void GuiGameStreaming::refreshLibrary(Window* window)
++{
++	const std::string h = host();
++	if (h.empty())
++	{
++		window->pushGui(new GuiMsgBox(window, _("Set the host address first.")));
++		return;
++	}
++
++	std::vector<std::string> titles;
++	const std::string listCmd = "moonlight list " + shellQuote(h) + " 2>/dev/null";
++	runShell(listCmd, [&titles](const std::string& line)
++	{
++		std::string title;
++		if (parseAppLine(line, &title))
++			titles.push_back(title);
++	});
++
++	if (titles.empty())
++	{
++		window->pushGui(new GuiMsgBox(window, _("No games found, or the host is unreachable / not paired.")));
++		return;
++	}
++
++	runShell("mkdir -p " + ROM_DIR);
++	runShell("find " + ROM_DIR + " -maxdepth 1 -name '*.sh' ! -name 'Moonlight.sh' -delete; rm -f " + ROM_DIR + "/gamelist.xml");
++
++	std::ofstream list(ROM_DIR + "/gamelist.xml");
++	list << "<?xml version=\"1.0\"?>\n<gameList>\n";
++
++	for (const std::string& title : titles)
++	{
++		std::string file = title;
++		std::replace(file.begin(), file.end(), '/', ' ');
++
++		const std::string scriptPath = ROM_DIR + "/" + file + ".sh";
++		std::ofstream script(scriptPath);
++		script << "#!/bin/bash\n";
++		script << "moonlight stream -app " << shellQuote(title)
++		       << " -platform rk " << shellQuote(h) << "\n";
++		script.close();
++		runShell("chmod +x " + shellQuote(scriptPath));
++
++		list << "\t<game>\n";
++		list << "\t\t<path>./" << xmlEscape(file) << ".sh</path>\n";
++		list << "\t\t<name>" << xmlEscape(title) << "</name>\n";
++		list << "\t</game>\n";
++	}
++
++	list << "</gameList>\n";
++	list.close();
++
++	window->pushGui(new GuiMsgBox(window,
++		_("Imported") + " " + std::to_string(titles.size()) + " " +
++		_("game(s). EmulationStation will now restart."),
++		_("OK"), []
++		{
++			Utils::Platform::quitES(Utils::Platform::QuitMode::RESTART);
++		}));
++}
++
++void GuiGameStreaming::quitSession(Window* window)
++{
++	const std::string h = host();
++	if (h.empty())
++	{
++		window->pushGui(new GuiMsgBox(window, _("Set the host address first.")));
++		return;
++	}
++	runShell("moonlight quit " + shellQuote(h));
++	window->pushGui(new GuiMsgBox(window, _("Asked the host to close the running game.")));
++}
++
++void GuiGameStreaming::resetPairing(Window* window)
++{
++	runShell("rm -rf /storage/.cache/moonlight");
++	window->pushGui(new GuiMsgBox(window, _("Local pairing data has been cleared.")));
++}
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -15,6 +15,7 @@
+ #include "guis/GuiBatoceraStore.h"
+ #include "guis/GuiSettings.h"
+ #include "guis/GuiRetroAchievements.h"
++#include "guis/GuiGameStreaming.h"
+ #include "guis/GuiGamelistOptions.h"
+ #include "guis/GuiImageViewer.h"
+ #include "guis/GuiNetPlaySettings.h"
+@@ -3059,6 +3060,9 @@
+ 	// Game List Update
+ 	s->addEntry(_("UPDATE GAMELISTS"), false, [this, window] { updateGameLists(window); });
+ 
++	// Moonlight game streaming (host pairing + streamed library)
++	s->addEntry(_("GAME STREAMING"), true, [window] { GuiGameStreaming::show(window); });
++
+ 	if (SystemConf::getInstance()->getBool("global.retroachievements") && !Settings::getInstance()->getBool("RetroachievementsMenuitem") && SystemConf::getInstance()->get("global.retroachievements.username") != "")
+ 	{
+ 		s->addEntry(_("RETROACHIEVEMENTS").c_str(), true, [this]
+--- a/es-app/CMakeLists.txt
++++ b/es-app/CMakeLists.txt
+@@ -146,6 +146,7 @@
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiGeneralScreensaverOptions.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiDecorationOptions.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiMenu.cpp
++    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiGameStreaming.cpp
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiSettings.cpp    
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiScraperStart.cpp	
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiScraperSettings.cpp	

@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: AmberELEC <devnull@amberelec.org>
+Date: Sat, 30 Aug 2026 00:00:00 +0000
+Subject: [PATCH] gamestream: bound HTTP(S) requests with a timeout
+
+libgamestream's curl handle had no connect/transfer timeout, so any GameStream
+HTTP(S) request blocked forever if the host accepted the TCP connection but
+never answered (observed with a wedged Sunshine nvhttp port 47984 that completes
+the TCP handshake but never sends a TLS ServerHello). The client then hung
+indefinitely on serverinfo/applist/resume instead of failing fast and letting
+the session be retried. Cap the connect phase (incl. TLS handshake) at 5s and
+the whole request at 15s, and enable TCP keepalive.
+---
+ libgamestream/http.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/libgamestream/http.c	2026-08-30 17:36:09.513716735 +0200
++++ b/libgamestream/http.c	2026-08-30 17:37:01.278261525 +0200
+@@ -67,6 +67,13 @@
+   curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+   curl_easy_setopt(curl, CURLOPT_SSL_SESSIONID_CACHE, 0L);
+ 
++  // Bound every GameStream HTTP(S) request so an unresponsive host (e.g. a wedged
++  // nvhttp port that accepts TCP but never completes the TLS handshake) fails fast
++  // and can be retried, instead of blocking the client indefinitely.
++  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
++  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
++  curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
++
+   return GS_OK;
+ }
+ 
