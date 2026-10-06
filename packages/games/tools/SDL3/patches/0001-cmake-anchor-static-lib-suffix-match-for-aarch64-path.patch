@@ -1,0 +1,11 @@
+--- a/cmake/sdlchecks.cmake	2026-10-04 20:57:32.188131110 +0200
++++ b/cmake/sdlchecks.cmake	2026-10-04 20:57:32.192948010 +0200
+@@ -14,7 +14,7 @@
+   find_library(${_LNAME}_LIB ${_LIB} PATHS ${_FLAS_LIBDIRS})
+ 
+   # FIXME: fail FindLibraryAndSONAME when library is not shared.
+-  if(${_LNAME}_LIB MATCHES ".*\\${CMAKE_SHARED_LIBRARY_SUFFIX}.*" AND NOT ${_LNAME}_LIB MATCHES ".*\\${CMAKE_STATIC_LIBRARY_SUFFIX}.*")
++  if(${_LNAME}_LIB MATCHES ".*\\${CMAKE_SHARED_LIBRARY_SUFFIX}.*" AND NOT ${_LNAME}_LIB MATCHES ".*\\${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+     set(${_LNAME}_SHARED TRUE)
+   else()
+     set(${_LNAME}_SHARED FALSE)
