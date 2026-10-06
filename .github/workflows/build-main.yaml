@@ -14,7 +14,7 @@ on:
       - dev
 # Ensure that if there are multiple builds for main only 1 is queued during a build
 # Example: 1st commit in main starts a build then 2-9 commits come in during the first build.
-#          'concurrency' makes it so that only commit 9 is enqueued to build rather builds 2-9 all runing a build.
+#           'concurrency' makes it so that only commit 9 is enqueued to build rather builds 2-9 all runing a build.
 concurrency:
   group: main
 
@@ -37,14 +37,24 @@ jobs:
               branch_arg="$GITHUB_REF_NAME"
             fi
             echo "branch=$branch_arg" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         name: Checkout
         with:
           clean: false
           ref: "${{ steps.branch.outputs.branch }}"
 
-  build-rg351p:
+  build-toolchain-rk3326:
     needs: [build-init]
+    timeout-minutes: 360
+    runs-on: main
+    steps:
+      - name: Build Toolchain RK3326
+        run: |
+            set -e
+            make DOCKER_WORK_DIR=/work docker-toolchain-RK3326
+
+  build-rg351p:
+    needs: [build-toolchain-rk3326]
     timeout-minutes: 360
     runs-on: main
     steps:
@@ -71,7 +81,7 @@ jobs:
             make DOCKER_WORK_DIR=/work docker-RG351P
 
   build-rg351v:
-    needs: [build-init, build-rg351p]
+    needs: [build-toolchain-rk3326, build-rg351p]
     timeout-minutes: 360
     runs-on: main
     steps:
@@ -98,7 +108,7 @@ jobs:
             make DOCKER_WORK_DIR=/work docker-RG351V
 
   build-rg351mp:
-    needs: [build-init, build-rg351p, build-rg351v]
+    needs: [build-toolchain-rk3326, build-rg351p, build-rg351v]
     timeout-minutes: 360
     runs-on: main
     steps:
@@ -124,8 +134,18 @@ jobs:
             export CUSTOM_VERSION="${{ steps.version.outputs.version }}"
             make DOCKER_WORK_DIR=/work docker-RG351MP
 
+  build-toolchain-rk3399:
+    needs: [build-rg351p, build-rg351v, build-rg351mp]
+    timeout-minutes: 360
+    runs-on: main
+    steps:
+      - name: Build Toolchain RK3399
+        run: |
+            set -e
+            make DOCKER_WORK_DIR=/work docker-toolchain-RK3399
+
   build-rg552:
-    needs: [build-init, build-rg351p, build-rg351v, build-rg351mp]
+    needs: [build-toolchain-rk3399]
     timeout-minutes: 360
     runs-on: main
     steps:
@@ -184,7 +204,7 @@ jobs:
             #main builds only include the .tar for speed
             rm -rf release/aarch64/RG*/*.img.gz*
       - name: Archive RG351V (${{github.sha}})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: github.event.client_payload.release_tag == ''
         with:
           name: RG351V-dev-main-${{ steps.date.outputs.date }}-${{steps.sha.outputs.sha}}
@@ -192,28 +212,28 @@ jobs:
             release/aarch64/RG351V/
       - name: Archive RG351P (${{github.sha}})
         if: github.event.client_payload.release_tag == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: RG351P-dev-main-${{ steps.date.outputs.date }}-${{steps.sha.outputs.sha}}
           path: |
             release/aarch64/RG351P/
       - name: Archive RG351MP (${{github.sha}})
         if: github.event.client_payload.release_tag == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: RG351MP-dev-main-${{ steps.date.outputs.date }}-${{steps.sha.outputs.sha}}
           path: |
             release/aarch64/RG351MP/
       - name: Archive RG552 (${{github.sha}})
         if: github.event.client_payload.release_tag == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: RG552-dev-main-${{ steps.date.outputs.date }}-${{steps.sha.outputs.sha}}
           path: |
             release/aarch64/RG552/
       - name: Create pre-release as draft at first to hide during uploads
         if: github.event.action == 'release-prerelease'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           body: |
@@ -253,7 +273,7 @@ jobs:
               </tr>
               <tr>
                 <td rowspan="10">RK3326</td>
-                <td rowspan="4">Anbernic</td>
+                <td rowspan="5">Anbernic</td>
                 <td>RG351P</td>
                 <td rowspan="2" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351P.aarch64-${{ steps.version.outputs.version }}.img.gz">Link</a></td>
                 <td rowspan="2" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351P.aarch64-${{ steps.version.outputs.version }}.tar">Link</a></td>
@@ -268,15 +288,20 @@ jobs:
               </tr>
               <tr>
                 <td>RG351MP</td>
-                <td rowspan="7" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351MP.aarch64-${{ steps.version.outputs.version }}.img.gz">Link</a></td>
-                <td rowspan="7" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351MP.aarch64-${{ steps.version.outputs.version }}.tar">Link</a></td>
+                <td rowspan="8" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351MP.aarch64-${{ steps.version.outputs.version }}.img.gz">Link</a></td>
+                <td rowspan="8" align="center"><a href="https://github.com/${{ github.event.repository.owner.login }}/AmberELEC-prerelease/releases/download/${{ steps.version.outputs.version }}/AmberELEC-RG351MP.aarch64-${{ steps.version.outputs.version }}.tar">Link</a></td>
               </tr>
               <tr>
-                <td rowspan="2">PowKiddy</td>
+                <td>RG35</td>
+              </tr>
+
+              <tr>
+                <td>PowKiddy</td>
                 <td>RGB20S</td>
               </tr>
               <tr>
-                <td>Magicx XU10</td>
+                <td>Magicx</td>
+                <td>XU10</td>
               </tr>
               <tr>
                 <td rowspan="2">Game Console<br />Game Station</td>
@@ -299,7 +324,7 @@ jobs:
           repo: AmberELEC-prerelease
       - name: Switch draft to start showing release
         if: github.event.action == 'release-prerelease'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           allowUpdates: true
@@ -311,7 +336,7 @@ jobs:
           omitNameDuringUpdate: true
       - name: Create dev release as draft at first to hide during uploads
         if: github.event.action == 'release-dev'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           body: |
@@ -337,7 +362,7 @@ jobs:
           repo: dev-builds
       - name: Switch draft to start showing release
         if: github.event.action == 'release-dev'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           allowUpdates: true
@@ -352,7 +377,7 @@ jobs:
       #This can be removed after no more 'bridge' betas are needed
       - name: Create pre-release as draft at first to hide during uploads
         if: github.event.action == 'release-beta'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           body: |
@@ -375,7 +400,7 @@ jobs:
           repo: AmberELEC-prerelease
       - name: Switch draft to start showing release
         if: github.event.action == 'release-beta'
-        uses: ncipollo/release-action@v1.13.0
+        uses: ncipollo/release-action@v1.21.0
         with:
           tag: "${{ steps.version.outputs.version }}"
           allowUpdates: true

@@ -15,7 +15,7 @@ PKG_NEED_UNPACK="${PROJECT_DIR}/${PROJECT}/bootloader"
 [ -n "${DEVICE}" ] && PKG_NEED_UNPACK+=" ${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/bootloader"
 
 if [[ "${DEVICE}" =~ RG351 ]]; then
-  PKG_VERSION="d8ad98256d4913bf39153a404f5e26e94cfe8b14"
+  PKG_VERSION="cc3640ed903c6ee62398da9f021ff9b2fed65b30"
   PKG_GIT_CLONE_SINGLE="yes"
   PKG_GIT_CLONE_DEPTH="1"
   PKG_URL="https://github.com/AmberELEC/uboot_rg351.git"
@@ -30,6 +30,16 @@ elif [[ "${DEVICE}" =~ RG552 ]]; then
 fi
 
 post_patch() {
+  if [ "${DEVICE}" == "RG351MP" ]; then
+    # The MP image uses the RG351V hardware-ID branch for RG35.
+    sed -i -e 's/"rg351v"/"rg35"/g' \
+           -e 's/"rg351v-uboot\.dtb"/"rg351mp-uboot.dtb"/g' \
+           -e 's/"rk3326-rg351v-linux\.dtb"/"rk3326-rg35-linux.dtb"/g' \
+           "${PKG_BUILD}/cmd/hwrev.c"
+  fi
+  if [ -f "${PKG_BUILD}/include/linux/compiler-gcc.h" ]; then
+    sed -i 's/#define unreachable() __builtin_unreachable()/#undef unreachable\n#define unreachable() __builtin_unreachable()/' ${PKG_BUILD}/include/linux/compiler-gcc.h
+  fi
   if [ -n "${UBOOT_SYSTEM}" ] && find_file_path bootloader/config; then
     PKG_CONFIG_FILE="${PKG_BUILD}/configs/$(${ROOT}/${SCRIPTS}/uboot_helper ${PROJECT} ${DEVICE} ${UBOOT_SYSTEM} config)"
     if [ -f "${PKG_CONFIG_FILE}" ]; then
@@ -39,6 +49,9 @@ post_patch() {
 }
 
 make_target() {
+  if [[ "${DEVICE}" =~ RG351 ]]; then
+    sed -i 's/-T \$(EFI_LDS_PATH) //' scripts/Makefile.lib
+  fi
   sed -i -e '/	kwbimage.o..*$/d' tools/Makefile
   if [ -z "${UBOOT_SYSTEM}" ]; then
     echo "UBOOT_SYSTEM must be set to build an image"
@@ -52,7 +65,11 @@ make_target() {
     fi
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make mrproper
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make $(${ROOT}/${SCRIPTS}/uboot_helper ${PROJECT} ${DEVICE} ${UBOOT_SYSTEM} config)
-    DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ make HOSTCC="${HOST_CC}" HOSTLDFLAGS="-L${TOOLCHAIN}/lib" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
+    if [[ "${DEVICE}" =~ RG351 ]]; then
+      DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ make HOSTCC="${HOST_CC}" HOSTLDFLAGS="-L${TOOLCHAIN}/lib" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
+    elif [[ "${DEVICE}" =~ RG552 ]]; then
+      DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ LD_LIBRARY_PATH="${TOOLCHAIN}/lib:${LD_LIBRARY_PATH}" make HOSTCC="${HOST_CC}" HOSTCFLAGS="-I${TOOLCHAIN}/include" HOSTLDFLAGS="-L${TOOLCHAIN}/lib -Wl,-rpath,${TOOLCHAIN}/lib -lssl -lcrypto" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
+    fi
   fi
 }
 

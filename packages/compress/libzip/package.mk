@@ -3,19 +3,26 @@
 # Copyright (C) 2019-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="libzip"
-PKG_VERSION="1.9.2"
-PKG_SHA256="c93e9852b7b2dc931197831438fee5295976ee0ba24f8524a8907be5c2ba5937"
-PKG_LICENSE="GPL"
+PKG_VERSION="1.11.4"
+PKG_SHA256="8a247f57d1e3e6f6d11413b12a6f28a9d388de110adc0ec608d893180ed7097b"
+PKG_LICENSE="BSD-3-Clause"
 PKG_SITE="https://libzip.org/"
 PKG_URL="https://libzip.org/download/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain zlib bzip2"
 PKG_LONGDESC="A C library for reading, creating, and modifying zip archives."
 
-PKG_CMAKE_OPTS_TARGET="-DENABLE_COMMONCRYPTO=OFF \
+PKG_CMAKE_OPTS_TARGET="-DCMAKE_PREFIX_PATH=${SYSROOT_PREFIX}/usr \
+                       -DZLIB_ROOT=${SYSROOT_PREFIX}/usr \
+                       -DZLIB_INCLUDE_DIR=${SYSROOT_PREFIX}/usr/include \
+                       -DZLIB_LIBRARY=${SYSROOT_PREFIX}/usr/lib/libz.so \
+                       -DBZIP2_INCLUDE_DIR=${SYSROOT_PREFIX}/usr/include \
+                       -DBZIP2_LIBRARY_RELEASE=${SYSROOT_PREFIX}/usr/lib/libbz2.so \
+                       -DENABLE_COMMONCRYPTO=OFF \
                        -DENABLE_GNUTLS=OFF \
                        -DENABLE_MBEDTLS=OFF \
                        -DENABLE_OPENSSL=OFF \
                        -DENABLE_WINDOWS_CRYPTO=OFF \
+                       -DENABLE_ZSTD=OFF \
                        -DBUILD_TOOLS=OFF \
                        -DBUILD_REGRESS=OFF \
                        -DBUILD_EXAMPLES=OFF \

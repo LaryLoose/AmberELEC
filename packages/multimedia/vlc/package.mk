@@ -4,7 +4,7 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC
 
 PKG_NAME="vlc"
-PKG_VERSION="3.0.18"
+PKG_VERSION="3.0.23"
 PKG_LICENSE="GPL"
 PKG_SITE="http://www.videolan.org"
 PKG_URL="https://mirror.netcologne.de/videolan.org/${PKG_NAME}/${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
@@ -59,7 +59,7 @@ DISABLED_FEATURES="--disable-dependency-tracking \
             --disable-dvbpsi \
             --disable-screen \
             --disable-ogg \
-            --disable-shout\
+            --disable-shout \
             --disable-mod \
             --disable-gme \
             --disable-wma-fixed \
@@ -122,7 +122,15 @@ DISABLED_FEATURES="--disable-dependency-tracking \
 PKG_CONFIGURE_OPTS_TARGET="${ENABLED_FEATURES} ${DISABLED_FEATURES}"
 
 pre_configure_target() {
-  export LDFLAGS="${LDFLAGS} -lresolv -fopenmp -lm"
+  export CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types"
+  export CXXFLAGS="${CXXFLAGS} -Wno-error=incompatible-pointer-types"
+  export LDFLAGS="${LDFLAGS} -lresolv -fopenmp -lm -Wl,-rpath,../src/.libs"
+}
+
+post_configure_target() {
+  # Prevent libtool from trying to relink plugins at install time across the sysroot
+  find ${PKG_BUILD} -name libtool -exec sed -i -e 's/need_relink=yes/need_relink=no/g' {} +
+  find ${PKG_BUILD} -name libtool -exec sed -i -e 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' {} +
 }
 
 post_makeinstall_target() {

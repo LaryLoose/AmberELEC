@@ -4,11 +4,12 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="ccache"
-PKG_VERSION="4.8.3"
-PKG_SHA256="e47374c810b248cfca3665ee1d86c7c763ffd68d9944bc422d9c1872611f2b11"
+PKG_VERSION="4.13.6"
+PKG_SHA256="a7de667ca08cf67c3c8af9f213f6aa701a1188a2b3163fb74483858ce5e79fbb"
 PKG_LICENSE="GPL"
 PKG_SITE="https://ccache.dev/download.html"
 PKG_URL="https://github.com/ccache/ccache/releases/download/v${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+PKG_DEPENDS_HOST="cmake:host"
 PKG_LONGDESC="A compiler cache to speed up re-compilation of C/C++ code by caching."
 PKG_TOOLCHAIN="cmake"
 
@@ -20,11 +21,23 @@ pre_configure_host() {
   rm -f ${TOOLCHAIN}/bin/host-g++
   ln -s ${LOCAL_CC} ${TOOLCHAIN}/bin/host-gcc
   ln -s ${LOCAL_CXX} ${TOOLCHAIN}/bin/host-g++
-  PKG_CMAKE_OPTS_HOST="-DREDIS_STORAGE_BACKEND=OFF -DENABLE_DOCUMENTATION=OFF -DENABLE_TESTING=OFF -DZSTD_FROM_INTERNET=ON"
+  PKG_CMAKE_OPTS_HOST="-DDEV_MODE=OFF \
+                       -DWARNINGS_AS_ERRORS=OFF \
+                       -DHTTP_STORAGE_BACKEND=OFF \
+                       -DREDIS_STORAGE_BACKEND=OFF \
+                       -DENABLE_DOCUMENTATION=OFF \
+                       -DENABLE_TESTING=OFF \
+                       -DZSTD_FROM_INTERNET=ON"
 }
 
 pre_configure_init() {
-  PKG_CMAKE_OPTS_INIT="-DREDIS_STORAGE_BACKEND=OFF -DENABLE_DOCUMENTATION=OFF -DENABLE_TESTING=OFF -DZSTD_FROM_INTERNET=ON"
+  PKG_CMAKE_OPTS_INIT="-DDEV_MODE=OFF \
+                       -DWARNINGS_AS_ERRORS=OFF \
+                       -DHTTP_STORAGE_BACKEND=OFF \
+                       -DREDIS_STORAGE_BACKEND=OFF \
+                       -DENABLE_DOCUMENTATION=OFF \
+                       -DENABLE_TESTING=OFF \
+                       -DZSTD_FROM_INTERNET=ON"
 }
 
 post_makeinstall_host() {

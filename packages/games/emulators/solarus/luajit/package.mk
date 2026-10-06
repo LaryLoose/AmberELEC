@@ -2,7 +2,7 @@
 # Copyright (C) 2019 Trond Haugland (github.com/escalade)
 
 PKG_NAME="luajit"
-PKG_VERSION="51fb2f2c3af778f03258fccee9092401ee4a0215"
+PKG_VERSION="1edc3e52b67eaf6ce5f809be8e17d6862594b8bc"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/LuaJIT/LuaJIT"
 PKG_URL="${PKG_SITE}.git"
@@ -10,6 +10,7 @@ PKG_DEPENDS_TARGET="toolchain luajit:host"
 PKG_LONGDESC="LuaJIT is a Just-In-Time Compiler (JIT) for the Lua programming language. "
 PKG_GIT_CLONE_BRANCH="v2.1"
 PKG_TOOLCHAIN="manual"
+PKG_BUILD_FLAGS="+bfd"
 
 post_patch() {
   mkdir -p ${PKG_BUILD}/.${TARGET_NAME} && cp -r ${PKG_BUILD}/* ${PKG_BUILD}/.${TARGET_NAME}
@@ -27,7 +28,6 @@ makeinstall_host() {
 makeinstall_target() {
   cd .${TARGET_NAME}
   unset CFLAGS
-  [ "${ARCH}" = "arm" ] && BIT="-m32"
   make PREFIX="/usr" \
 		CC="${CC} -fPIC" \
 		TARGET_LD="${CC}" \
@@ -38,7 +38,7 @@ makeinstall_target() {
 		HOST_CC="${HOST_CC} ${BIT}" \
 		HOST_CFLAGS="${CFLAGS}" \
 		HOST_LDFLAGS="${LDFLAGS}" \
-		XCFLAGS= \
+		XCFLAGS="-DLJ_MAX_HBITS=26" \
 		${JITARCH} \
 		amalg
   make PREFIX=/usr DESTDIR=${INSTALL} install
