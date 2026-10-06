@@ -3,11 +3,11 @@
 # Copyright (C) 2024-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="amiberry"
-PKG_VERSION="c53d6db770a5580732a7f2bb48abcbfcd95fd0f4"
+PKG_VERSION="110ab1b08c010f8b1f873310add18cc66dae4f24"
 PKG_LICENSE="GPLv3"
 PKG_SITE="https://github.com/BlitterStudio/amiberry"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain linux glibc bzip2 zlib SDL2 SDL2_image SDL2_ttf capsimg freetype libxml2 flac libogg mpg123 libpng libmpeg2 libserialport libportmidi enet libpcap"
+PKG_DEPENDS_TARGET="toolchain linux glibc bzip2 zlib ${OPENGLES} SDL3 SDL3_image capsimg flac libogg mpg123 libpng libmpeg2 libserialport libportmidi enet libpcap curl nlohmann-json zstd"
 PKG_LONGDESC="Amiberry is an optimized Amiga emulator for ARM-based boards."
 PKG_TOOLCHAIN="cmake-make"
 PKG_GIT_CLONE_BRANCH="master"
@@ -16,6 +16,8 @@ pre_configure_target() {
   PKG_CMAKE_OPTS_TARGET=" -DCMAKE_BUILD_TYPE=Release \
                       -DCMAKE_RULE_MESSAGES=OFF \
                       -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+                      -DUSE_OPENGL=ON \
+                      -DUSE_GLES=ON \
                       -DCMAKE_C_FLAGS_RELEASE="-DNDEBUG" \
                       -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG""
 }
@@ -35,7 +37,7 @@ makeinstall_target() {
   ln -s /storage/roms/bios ${INSTALL}/usr/config/amiberry/kickstarts
 
   # Copy binary, scripts & link libcapsimg
-  cp -a amiberry* ${INSTALL}/usr/bin/amiberry
+  cp -a amiberry ${INSTALL}/usr/bin/amiberry
   cp -a ${PKG_DIR}/scripts/* ${INSTALL}/usr/bin
   ln -sf /usr/lib/libcapsimage.so.5.1 ${INSTALL}/usr/config/amiberry/capsimg.so
   

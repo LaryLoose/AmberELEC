@@ -8,6 +8,11 @@
 # Set some common variables
 AMIBERRY_DIR=/storage/.config/amiberry
 AMIBERRY_CONFIG_DIR=$AMIBERRY_DIR/conf
+
+# Amiberry v8+ resolves home/data via env vars, not the working directory.
+# Pin them to the AmberELEC layout: writable user data in /storage, read-only assets from the image.
+export AMIBERRY_HOME_DIR="$AMIBERRY_DIR"
+export AMIBERRY_DATA_DIR="/usr/config/amiberry/data"
 AMIBERRY_TMP_DIR=/tmp/emulation/amiberry
 AMIBERRY_TMP_CONFIG="$AMIBERRY_TMP_DIR"/.amiberry_conf.uae
 AMIBERRY_LOG=/tmp/logs/amiberry.log
