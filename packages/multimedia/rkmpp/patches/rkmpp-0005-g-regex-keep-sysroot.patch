@@ -1,0 +1,14 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -124,9 +124,9 @@
+ 
+ if(${CMAKE_BUILD_TYPE} MATCHES "Release")
+     # remove -g option for high version ndk
+-    string(REGEX REPLACE "-g[^ ]*" "" TMP "${CMAKE_C_FLAGS}")
++    string(REGEX REPLACE "(^| )-g[^ ]*" "\\1" TMP "${CMAKE_C_FLAGS}")
+     string(REGEX REPLACE "[ ]+" " " CMAKE_C_FLAGS "${TMP}")
+-    string(REGEX REPLACE "-g[^ ]*" "" TMP "${CMAKE_CXX_FLAGS}")
++    string(REGEX REPLACE "(^| )-g[^ ]*" "\\1" TMP "${CMAKE_CXX_FLAGS}")
+     string(REGEX REPLACE "[ ]+" " " CMAKE_CXX_FLAGS "${TMP}")
+ 
+     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DNDEBUG")

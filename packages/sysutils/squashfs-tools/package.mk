@@ -45,7 +45,7 @@ make_target() {
        CC="${CC}" \
        AR="${AR}" \
        RANLIB="${RANLIB}" \
-       EXTRA_CFLAGS="${CFLAGS}" \
+       EXTRA_CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types" \
        LDFLAGS="${LDFLAGS}" \
        EXTRA_LDFLAGS="${LDFLAGS}"
 }

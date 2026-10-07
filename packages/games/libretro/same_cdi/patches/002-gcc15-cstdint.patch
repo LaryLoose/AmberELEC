@@ -1,0 +1,11 @@
+--- a/src/lib/util/corestr.h
++++ b/src/lib/util/corestr.h
+@@ -16,6 +16,8 @@
+ #include <string>
+ #include <string_view>
+ 
++#include <cstdint>
++
+ #include <cstring>
+ 
+ 

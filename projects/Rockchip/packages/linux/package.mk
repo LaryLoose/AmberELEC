@@ -4,7 +4,7 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="linux"
-if [[ "${DEVICE}" =~ RG351 ]]; then
+if [[ "${DEVICE}" =~ (RG351|RK3326) ]]; then
   PKG_VERSION="96070d6449a733145d85fc9edc28254f50ac3657"
   PKG_URL="https://github.com/AmberELEC/kernel_rg351/archive/${PKG_VERSION}.tar.gz"
 elif [[ "${DEVICE}" =~ RG552 ]]; then
@@ -151,6 +151,10 @@ pre_make_target() {
   sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
   sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
   cd ${PREEXF}
+
+  # out-of-tree wifi drivers have broken header guards -> GCC 15 -Wheader-guard is fatal
+  export KCFLAGS="${KCFLAGS} -Wno-header-guard"
+  export KCFLAGS="${KCFLAGS} -w"
 
   kernel_make oldconfig
 

@@ -17,7 +17,7 @@ else
   PKG_ENABLE_VP9D="OFF"
 fi
 
-PKG_CMAKE_OPTS_TARGET="-DENABLE_VP9D=${PKG_ENABLE_VP9D}"
+PKG_CMAKE_OPTS_TARGET="-DENABLE_VP9D=${PKG_ENABLE_VP9D} -DBUILD_TEST=OFF"
 
 pre_configure_target() {
   # Upstream MPP declares functions as MPP_RET (enum) but defines them as

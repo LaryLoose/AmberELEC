@@ -18,6 +18,8 @@ if [[ "${DEVICE}" == RG552 ]]; then
 fi
 
 pre_configure_target() {
+  export CFLAGS="${CFLAGS} -Wno-error=implicit-function-declaration -Wno-error=int-conversion"
+
   TARGET_CONFIGURE_OPTS=""
   PKG_CONFIGURE_OPTS_TARGET="--disable-qt \
                              --enable-alsa \
@@ -56,7 +58,7 @@ pre_configure_target() {
 }
 
 make_target() {
-  make HAVE_LIBRETRODB=1 HAVE_NETWORKING=1 HAVE_LAKKA=1 HAVE_ZARCH=1 HAVE_QT=0 HAVE_LANGEXTRA=1 HAVE_LAKKA_PROJECT=0 HAVE_LAKKA_SERVER=0
+  make HAVE_LIBRETRODB=1 HAVE_NETWORKING=1 HAVE_LAKKA=1 HAVE_ZARCH=1 HAVE_QT=0 HAVE_LANGEXTRA=1 HAVE_LAKKA_PROJECT=0 HAVE_LAKKA_SERVER=0 HAVE_CHEATS=1
   [ $? -eq 0 ] && echo "(retroarch ok)" || { echo "(retroarch failed)" ; exit 1 ; }
   make -C gfx/video_filters compiler=${CC} extra_flags="${CFLAGS}"
   [ $? -eq 0 ] && echo "(video filters ok)" || { echo "(video filters failed)" ; exit 1 ; }

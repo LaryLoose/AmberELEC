@@ -23,6 +23,10 @@ pre_configure_target() {
   sed -i 's/"Flycast"/"Flycast 2021"/g' core/libretro/libretro.cpp
   sed -i 's/RETRO_PIXEL_FORMAT_XRGB8888/RETRO_PIXEL_FORMAT_RGB565/g' core/libretro/libretro.cpp
 
+  # bundled libzip/mkstemp.c calls getpid() without <unistd.h>; GCC 14+ makes the
+  # implicit declaration an error (getpid returns int, so demoting to a warning is safe).
+  export CFLAGS="${CFLAGS} -Wno-error=implicit-function-declaration"
+
   PKG_MAKE_OPTS_TARGET="GIT_VERSION=${PKG_VERSION:0:7}"
 }
 

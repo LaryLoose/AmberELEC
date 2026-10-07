@@ -10,6 +10,12 @@ PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="A port of QUASI88, a PC-8800 series emulator by Showzoh Fukunaga, to the libretro API"
 PKG_TOOLCHAIN="make"
 
+pre_make_target() {
+  # Q8tk K&R callback typedefs clash with specific callback signatures; GCC 14+
+  # makes incompatible-pointer-types an error (ABI-compatible, so demote to warning).
+  export CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types"
+}
+
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
   cp quasi88_libretro.so ${INSTALL}/usr/lib/libretro/

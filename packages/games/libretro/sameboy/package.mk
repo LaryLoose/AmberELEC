@@ -13,8 +13,9 @@ PKG_TOOLCHAIN="make"
 PKG_GIT_CLONE_BRANCH="libretro"
 
 make_target() {
-  PATH=/usr/bin:$PATH 
-  make libretro
+  # The BootROM build races on the shared host tool build/pb12 (compiled and run by
+  # several boot ROM targets in parallel -> "Permission denied"). Build serially.
+  PATH=/usr/bin:$PATH make -j1 libretro
 }
 
 makeinstall_target() {

@@ -34,13 +34,26 @@ PKG_MAKE_OPTS_TARGET="REGENIE=1 \
 
 pre_configure_target() {
   sed -i "s/-static-libstdc++//g" scripts/genie.lua
+  # Build the host-side genie tool with the real system compiler (no target sysroot),
+  # else host-gcc pulls the aarch64 math-vector.h ("unknown type name __Float32x4_t").
+  sed -i 's|^\([ \t]*CC[ \t]*=\).*|\1 /usr/bin/gcc|g' 3rdparty/genie/build/gmake.linux/genie.make
+  sed -i 's|^\([ \t]*CXX[ \t]*=\).*|\1 /usr/bin/g++|g' 3rdparty/genie/build/gmake.linux/genie.make
 }
 
 make_target() {
   unset ARCH
   unset DISTRO
   unset PROJECT
+  # GCC 15 type-checks template bodies before instantiation; bundled sol2's
+  # optional<T&>::emplace references a non-existent construct() -> downgrade.
+  # (<cstdint> for uint8_t is handled by the gcc15-cstdint patch, not a force-include,
+  #  which would break MAME's precompiled header.)
   export ARCHOPTS="-D__aarch64__ -DASMJIT_BUILD_X86"
+  export ARCHOPTS_CXX="-Wno-template-body"
+
+  env -u CFLAGS -u LDFLAGS -u CPPFLAGS make -C 3rdparty/genie/build/gmake.linux -f genie.make \
+      CC="/usr/bin/gcc" CXX="/usr/bin/g++" CFLAGS="" CPPFLAGS="" LDFLAGS=""
+
   make -f Makefile.libretro ${PKG_MAKE_OPTS_TARGET} OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=${LD} AR=${AR} ${MAKEFLAGS}
 }
 

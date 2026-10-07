@@ -23,6 +23,12 @@ if [[ "${DEVICE}" == RG351P ]] || [[ "${DEVICE}" == RG351V ]]; then
   PKG_PATCH_DIRS="rumble"
 fi
 
+pre_configure_target() {
+  # Force C17: GCC 15 / newer glibc declare the C23 narrowing function fsqrt(),
+  # which collides with parallel-n64's own x86 dynarec 'void fsqrt(void)'.
+  export CFLAGS="${CFLAGS} -std=gnu17 -Wno-error=mismatched-dealloc"
+}
+
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
   cp parallel_n64_libretro.so ${INSTALL}/usr/lib/libretro/

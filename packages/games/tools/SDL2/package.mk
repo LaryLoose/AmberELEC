@@ -21,6 +21,8 @@ pre_make_host() {
 }
 
 pre_configure_target(){
+  export CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
+
   PKG_CMAKE_OPTS_TARGET="-DSDL_STATIC=OFF \
                          -DSDL_LIBC=ON \
                          -DSDL_GCC_ATOMICS=ON \
@@ -61,6 +63,8 @@ pre_configure_target(){
                          -DSDL_OPENGLES=ON \
                          -DSDL_VULKAN=OFF \
                          -DSDL_KMSDRM=ON \
+                         -DDRM_LIB=${SYSROOT_PREFIX}/usr/lib/libdrm.so \
+                         -DGBM_LIB=${SYSROOT_PREFIX}/usr/lib/libgbm.so \
                          -DSDL_PULSEAUDIO=ON"
   export LDFLAGS="${LDFLAGS} -lrga"
 }

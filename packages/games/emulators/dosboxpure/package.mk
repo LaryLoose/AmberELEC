@@ -15,7 +15,7 @@ unpack() {
   cp -rf ${SOURCES}/${PKG_NAME}/${PKG_NAME}-${PKG_VERSION}/. ${PKG_BUILD}/
 
   git clone -q --depth 1 --branch 1.0-preview6 https://github.com/schellingb/dosbox-pure.git ${PKG_BUILD}/dosbox-pure
-  git clone -q --depth 1 https://github.com/schellingb/ZillaLib.git ${PKG_BUILD}/ZillaLib
+  git clone -q https://github.com/schellingb/ZillaLib.git ${PKG_BUILD}/ZillaLib
   git -C ${PKG_BUILD}/ZillaLib reset -q --hard a2796bfe0faebe3e5de14b75d6b45866f1576f14
 }
 

@@ -32,7 +32,7 @@
     KERNEL_MAKE_EXTRACMD=""
     KERNEL_MAKE_EXTRACMD+=" rockchip/rk3326-rg351mp-linux.dtb"
     KERNEL_MAKE_EXTRACMD+=" rockchip/rk3326-rg351mp-linux-timing_fix.dtb"
-    KERNEL_MAKE_EXTRACMD+=" rockchip/rk3326-rg35-linux.dtb"
+    # rk3326-rg35-linux.dtb fehlt im gepinnten Kernel 96070d6 (nur in upstreams neuerem Kernel)
     KERNEL_MAKE_EXTRACMD+=" rockchip/rk3326-xu10-linux.dtb"
     KERNEL_MAKE_EXTRACMD+=" rockchip/rk3326-d007-linux.dtb"
 

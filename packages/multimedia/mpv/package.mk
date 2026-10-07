@@ -13,10 +13,19 @@ PKG_TOOLCHAIN="manual"
 
 pre_configure_target() {
   cp -f ${TOOLCHAIN}/bin/waf ${PKG_BUILD}
+  # GCC 15 defaults to -fzero-init-padding-bits=standard, which no longer zeroes
+  # union bytes past the first member; mpv relies on `union m_option_value = {0}`
+  # being fully zeroed (else a garbage obj_settings_list pointer crashes startup).
+  export TARGET_CFLAGS="${TARGET_CFLAGS} -fzero-init-padding-bits=all"
+  export CFLAGS="${CFLAGS} -fzero-init-padding-bits=all"
 }
 
 configure_target() {
   cd ${PKG_BUILD}
+  # waf 2.1.x uses argparse: optparse-era wscript needs get_option_group ->
+  # add_option_group and type='string' -> type=str (else "'string' is not callable").
+  sed -i 's/opt\.get_option_group/opt\.add_option_group/g' ${PKG_BUILD}/wscript
+  find ${PKG_BUILD} -type f \( -name "wscript" -o -name "*.py" \) -exec sed -i "s/type[[:space:]]*=[[:space:]]*'string'/type=str/g" {} +
   ${PKG_BUILD}/waf configure --enable-sdl2 --enable-sdl2-gamepad --disable-pulse --enable-egl --enable-drm --enable-gbm --enable-egl-drm --disable-libbluray
 }
 
