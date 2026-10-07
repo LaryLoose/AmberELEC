@@ -1,9 +1,7 @@
-diff --git a/src/go2/display.cpp b/src/go2/display.cpp
-index 9edf1cc..c629808 100755
---- a/src/go2/display.cpp
-+++ b/src/go2/display.cpp
-@@ -226,6 +226,48 @@ void go2_display_present(go2_display_t *display, go2_frame_buffer_t *frame_buffe
-     }
+--- a/src/go2/display.cpp	2026-10-07 09:40:22.925516177 +0200
++++ b/src/go2/display.cpp	2026-10-07 09:40:22.950713440 +0200
+@@ -585,6 +585,48 @@
+     display->direct_plane_active = false;
  }
  
 +void go2_display_set_refresh_rate(go2_display_t *display, float fps)
@@ -51,29 +49,56 @@ index 9edf1cc..c629808 100755
  const char *BACKLIGHT_BRIGHTNESS_NAME = "/sys/class/backlight/backlight/brightness";
  const char *BACKLIGHT_BRIGHTNESS_MAX_NAME = "/sys/class/backlight/backlight/max_brightness";
  #define BACKLIGHT_BUFFER_SIZE (127)
-diff --git a/src/go2/display.h b/src/go2/display.h
-index 9a223e5..8dcf7b9 100755
---- a/src/go2/display.h
-+++ b/src/go2/display.h
-@@ -47,6 +47,8 @@ void go2_display_destroy(go2_display_t* display);
- int go2_display_width_get(go2_display_t* display);
- int go2_display_height_get(go2_display_t* display);
+--- a/src/go2/display.h	2026-10-07 09:40:22.925612976 +0200
++++ b/src/go2/display.h	2026-10-07 09:40:22.950986838 +0200
+@@ -88,6 +88,8 @@
+                                  go2_display_diagnostics_t* diagnostics);
+ void go2_display_diagnostics_reset(go2_display_t* display);
  void go2_display_present(go2_display_t* display, go2_frame_buffer_t* frame_buffer);
 +// Switch the panel to the connector mode whose refresh rate best matches fps (e.g. 50Hz for PAL).
 +void go2_display_set_refresh_rate(go2_display_t* display, float fps);
- uint32_t go2_display_backlight_get(go2_display_t* display);
- void go2_display_backlight_set(go2_display_t* display, uint32_t value);
+ bool go2_display_present_surface(go2_display_t* display, go2_surface_t* surface,
+                                  int srcX, int srcY, int srcWidth, int srcHeight,
+                                  int dstX, int dstY, int dstWidth, int dstHeight,
+--- a/src/platform/platform.h	2026-10-07 09:40:22.927682457 +0200
++++ b/src/platform/platform.h	2026-10-07 09:40:22.951094637 +0200
+@@ -172,6 +172,8 @@
+ void rr_display_diagnostics_reset(rr_display_t* display);
+ uint32_t rr_display_backlight_get(rr_display_t* display);
+ void rr_display_backlight_set(rr_display_t* display, uint32_t value);
++// Match the panel refresh rate to the content (e.g. 50Hz for PAL) if the platform supports it.
++void rr_display_set_refresh_rate(rr_display_t* display, float fps);
+ int rr_pixel_format_bpp(uint32_t format);
  
-diff --git a/src/main.cpp b/src/main.cpp
-index 35bbcad..4067049 100755
---- a/src/main.cpp
-+++ b/src/main.cpp
-@@ -2272,6 +2272,8 @@ int main(int argc, char *argv[])
-     { // just to be sure info are ther
-         originalFps = 60;
-     }
+ rr_surface_t* rr_surface_create(rr_display_t* display, int width, int height, uint32_t format);
+--- a/src/platform/platform_go2.cpp	2026-10-07 09:40:22.927847855 +0200
++++ b/src/platform/platform_go2.cpp	2026-10-07 09:40:22.951203436 +0200
+@@ -136,6 +136,7 @@
+ 
+ rr_display_t* rr_display_create() { go2_display_t* native = go2_display_create(); if (!native) return NULL; rr_display_t* d = new rr_display_t; d->native = native; return d; }
+ void rr_display_destroy(rr_display_t* display) { if (display) { go2_display_destroy(display->native); delete display; } }
++void rr_display_set_refresh_rate(rr_display_t* display, float fps) { if (display) go2_display_set_refresh_rate(display->native, fps); }
+ int rr_display_width_get(rr_display_t* display) { return go2_display_width_get(display->native); }
+ int rr_display_height_get(rr_display_t* display) { return go2_display_height_get(display->native); }
+ void rr_display_diagnostics_get(rr_display_t* display, rr_display_diagnostics_t* diagnostics) {
+--- a/src/platform/platform_sdl.cpp	2026-10-07 09:40:22.927930954 +0200
++++ b/src/platform/platform_sdl.cpp	2026-10-07 09:40:22.951789930 +0200
+@@ -692,6 +692,7 @@
+     return display;
+ }
+ void rr_display_destroy(rr_display_t* display) { if (display) { if (display->window) SDL_DestroyWindow(display->window); delete display; } }
++void rr_display_set_refresh_rate(rr_display_t* display, float fps) { (void)display; (void)fps; }
+ int rr_display_width_get(rr_display_t* display) { refresh_display_size(display); return display->width; }
+ int rr_display_height_get(rr_display_t* display) { refresh_display_size(display); return display->height; }
+ void rr_display_diagnostics_get(rr_display_t*, rr_display_diagnostics_t* diagnostics) {
+--- a/src/main.cpp	2026-10-07 09:40:22.930573530 +0200
++++ b/src/main.cpp	2026-10-07 09:40:22.952205026 +0200
+@@ -936,6 +936,8 @@
+     originalFps = info.timing.fps;
+     if (max_fps < 1) max_fps = 60;
+     if (originalFps < 1) originalFps = 60;
 +    // Match the panel refresh rate to the content (e.g. 50Hz for PAL) if such a mode exists.
-+    go2_display_set_refresh_rate(display, (float)info.timing.fps);
-     // adaptiveFps = isFlycast() ? true: false;
-     bool redrawInfo = true;
-     // we postpone this here because if we do it before some emulators dont like it (Dosbox core)
++    rr_display_set_refresh_rate(display, (float)info.timing.fps);
+ 
+     if (benchmark_requested())
+     {

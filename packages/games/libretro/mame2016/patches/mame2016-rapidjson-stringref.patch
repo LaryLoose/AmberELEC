@@ -1,10 +1,10 @@
---- a/3rdparty/rapidjson/include/rapidjson/document.h
-+++ b/3rdparty/rapidjson/include/rapidjson/document.h
+--- a/3rdparty/rapidjson/include/rapidjson/document.h	2026-10-07 10:49:33.121048807 +0200
++++ b/3rdparty/rapidjson/include/rapidjson/document.h	2026-10-07 10:49:34.233052664 +0200
 @@ -314,7 +314,7 @@
  
      GenericStringRef(const GenericStringRef& rhs) : s(rhs.s), length(rhs.length) {}
  
--    GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; length = rhs.length; }
+-    GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; /*length = rhs.length;*/ }
 +    GenericStringRef& operator=(const GenericStringRef& rhs);
  
      //! implicit conversion to plain CharType pointer

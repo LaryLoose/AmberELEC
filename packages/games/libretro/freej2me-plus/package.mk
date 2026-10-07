@@ -17,6 +17,9 @@ pre_configure_target() {
     ${PKG_BUILD}/src/libretro/freej2me_libretro.h \
     ${PKG_BUILD}/src/libretro/freej2me_libretro.info
 
+  # JDK 8+ no longer supports source/target 6
+  sed -i 's/\(name="\(source\|target\)\.version" value="\)1\.6"/\11.8"/g' ${PKG_BUILD}/build.xml
+
   ${TOOLCHAIN}/bin/ant
 }
 
