@@ -2,12 +2,10 @@
 # Copyright (C) 2016-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="kernel-firmware"
-PKG_VERSION="linux-firmware-20240410"
+PKG_VERSION="20260622"
 PKG_LICENSE="other"
-#PKG_SITE="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/"
-PKG_SITE="https://www.kernel.org/pub/linux/kernel/firmware/"
-#PKG_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/snapshot/${PKG_VERSION}.tar.gz"
-PKG_URL="https://www.kernel.org/pub/linux/kernel/firmware/${PKG_VERSION}.tar.gz"
+PKG_SITE="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/"
+PKG_URL="https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-${PKG_VERSION}.tar.xz"
 PKG_NEED_UNPACK="${PROJECT_DIR}/${PROJECT}/packages/${PKG_NAME} ${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/packages/${PKG_NAME}"
 PKG_LONGDESC="kernel-firmware: kernel related firmware"
 PKG_TOOLCHAIN="manual"
@@ -20,7 +18,9 @@ post_patch() {
   (
     cd ${PKG_BUILD}
     mkdir -p "${PKG_FW_SOURCE}"
-      ./copy-firmware.sh --verbose "${PKG_FW_SOURCE}"
+      local fw_verbose=""
+      [ "${VERBOSE}" = "yes" ] && fw_verbose="--verbose"
+      ./copy-firmware.sh ${fw_verbose} "${PKG_FW_SOURCE}"
 
     # copy extra firmware files (or overwrite upstream ones)
     if [ -d ${PKG_DIR}/extra-firmware ]; then
@@ -32,6 +32,9 @@ post_patch() {
 # Install additional miscellaneous drivers
 makeinstall_target() {
   FW_TARGET_DIR=${INSTALL}/$(get_full_firmware_dir)
+
+  local cp_verbose=""
+  [ "${VERBOSE}" = "yes" ] && cp_verbose="-v"
 
   if find_file_path config/kernel-firmware.dat; then
     FW_LISTS="${FOUND_PATH}"
@@ -58,7 +61,7 @@ makeinstall_target() {
 
         if [ -f "${PKG_FW_SOURCE}/${fwfile}" ]; then
           mkdir -p "$(dirname "${FW_TARGET_DIR}/${fwfile}")"
-            cp -Lv "${PKG_FW_SOURCE}/${fwfile}" "${FW_TARGET_DIR}/${fwfile}"
+            cp -L ${cp_verbose} "${PKG_FW_SOURCE}/${fwfile}" "${FW_TARGET_DIR}/${fwfile}"
         else
           echo "ERROR: Firmware file ${fwfile} does not exist - aborting"
           exit 1
@@ -81,11 +84,6 @@ makeinstall_target() {
   [ "${TARGET_ARCH}" != "x86_64" ] && rm -fr ${FW_TARGET_DIR}/brcm/*-pcie.*
 
   # Upstream doesn't name the file correctly so we need to symlink it
-  if [ -f "${FW_TARGET_DIR}/rtl_bt/rtl8723bs_config-OBDA8723.bin" ]; then
-    #cd "${FW_TARGET_DIR}/rtl_bt"
-    ln -s "rtl8723bs_config-OBDA8723.bin" "${FW_TARGET_DIR}/rtl_bt/rtl8723bs_config.bin"
-  fi
-
   if [ ! -f "${FW_TARGET_DIR}/rtl_bt/rtl8723b_config.bin" ]; then
     cp "${PKG_DIR}/firmwares/rtl8723b_config.bin" "${FW_TARGET_DIR}/rtl_bt/rtl8723b_config.bin"
   fi
