@@ -3,9 +3,8 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="parallel-n64"
-PKG_VERSION="1da824e13e725a7144f3245324f43d59623974f8"
-PKG_SHA256="d5cc082df35ecb5710bfef6ff6d8c93e03fb643c6fbbfa78b0c89bdb9f83ec7f"
-PKG_REV="2"
+PKG_VERSION="f8605345e13c018a30c8f4ed03c05d8fc8f70be8"
+PKG_SHA256="344cfa8bbbab1a2e1370a3f70de6b12e04f7ded95dd04f953c475941d19ad9b8"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/parallel-n64"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -24,8 +23,6 @@ if [[ "${DEVICE}" == RG351P ]] || [[ "${DEVICE}" == RG351V ]]; then
 fi
 
 pre_configure_target() {
-  # Force C17: GCC 15 / newer glibc declare the C23 narrowing function fsqrt(),
-  # which collides with parallel-n64's own x86 dynarec 'void fsqrt(void)'.
   export CFLAGS="${CFLAGS} -std=gnu17 -Wno-error=mismatched-dealloc"
 }
 

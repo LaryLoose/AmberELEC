@@ -2,28 +2,34 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="retrorun"
-PKG_VERSION="59ea63f30b4784562fe04e5c849f955edcee38c8"
+PKG_VERSION="65f006003b58c5bdfdc6dea4d6506b17f24d7f91"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/AmberELEC/retrorun"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain libdrm libpng linux libevdev librga openal-soft"
+PKG_DEPENDS_TARGET="toolchain libdrm libpng linux libevdev librga openal-soft curl zlib ${OPENGLES}"
 PKG_TOOLCHAIN="make"
 
 pre_configure_target() {
-  CFLAGS+=" -I$(get_build_dir libdrm)/include/drm"
-  CFLAGS+=" -I$(get_build_dir linux)/include/uapi"
-  CFLAGS+=" -I$(get_build_dir linux)/tools/include"
+  if [[ "${DEVICE}" =~ RG353 ]]; then
+    local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm"
+  else
+    local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm -I$(get_build_dir linux)/include/uapi -I$(get_build_dir linux)/tools/include"
+  fi
+  INC_FLAGS+=" -I$(get_build_dir ${OPENGLES})/include"
+  INC_FLAGS+=" -I$(get_build_dir ${OPENGLES})/include/GBM"
+  CFLAGS+=" ${INC_FLAGS}"
+  CXXFLAGS+=" ${INC_FLAGS} -std=gnu++17"
 }
 
 make_target() {
-  cd ${PKG_BUILD}
-  make platform=odroidgoa ARCH=
+  make CC="${CC}" CXX="${CXX}" CPP="${CXX}" LD="${CXX}" PLATFORM=linux-go2 config=release ARCH= verbose=1
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/bin
   cp retrorun ${INSTALL}/usr/bin
   cp $PKG_DIR/retrorun.sh ${INSTALL}/usr/bin
+  install -m 0755 $PKG_DIR/retrorun-config-sync ${INSTALL}/usr/bin
   mkdir -p ${INSTALL}/usr/config/distribution/configs
   cp -vP ${PKG_DIR}/retrorun.cfg ${INSTALL}/usr/config/distribution/configs
 }

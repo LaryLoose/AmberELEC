@@ -2,8 +2,8 @@
 # Copyright (C) 2020-present Shanti Gilbert (https://github.com/shantigilbert)
 
 PKG_NAME="hydracastlelabyrinth"
-PKG_VERSION="56efcf605f99f8bbe5ac4b2e0705aadfba3cb8ac"
-PKG_SHA256="0a508e1ec195de7bf325c821eab21b69f8d089ac7dbbb0a13b9ce5276eacf12c"
+PKG_VERSION="e31648688434a789e3056e52cdf1b9a842eeed48"
+PKG_SHA256="2be6850a8bebed536fcea39598ebc33ecf80958818b5d97ff094a883a46953db"
 PKG_LICENSE="GPL2"
 PKG_SITE="https://github.com/ptitSeb/hydracastlelabyrinth"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

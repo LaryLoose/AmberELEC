@@ -3,8 +3,8 @@
 # Copyright (C) 2020-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="freeintv"
-PKG_VERSION="9b66d2b3c3406659b2fdfaade7a80f3e62772815"
-PKG_SHA256="6d7bf5b5b30c8af6f59efbe7cd34cae8d4b014821c3c9b1fd503699d961c97c8"
+PKG_VERSION="ef3e0fe322bec62a7f916c0bb0834c08c348d0b4"
+PKG_SHA256="912d0a9c314cc63c396f8bc5a5778c341a3f4f860ebae1e069a877b9c98d0f11"
 PKG_LICENSE="GPLv3"
 PKG_SITE="https://github.com/libretro/FreeIntv"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

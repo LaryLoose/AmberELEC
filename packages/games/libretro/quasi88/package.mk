@@ -2,7 +2,7 @@
 # Copyright (C) 2019-present asakous (https://github.com/asakous)
 
 PKG_NAME="quasi88"
-PKG_VERSION="ec3d357916a3ba77716d91724b6c6e619ae8f055"
+PKG_VERSION="b5a0e044a914c9a6b8d7b2dd2ddd152f93d35687"
 PKG_LICENSE="BSD3"
 PKG_SITE="https://github.com/libretro/quasi88-libretro"
 PKG_URL="${PKG_SITE}.git"
@@ -11,8 +11,6 @@ PKG_LONGDESC="A port of QUASI88, a PC-8800 series emulator by Showzoh Fukunaga, 
 PKG_TOOLCHAIN="make"
 
 pre_make_target() {
-  # Q8tk K&R callback typedefs clash with specific callback signatures; GCC 14+
-  # makes incompatible-pointer-types an error (ABI-compatible, so demote to warning).
   export CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types"
 }
 

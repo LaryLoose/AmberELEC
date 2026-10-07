@@ -58,7 +58,7 @@ fi
 
 ## 2024-05-06
 ## Set new defaults after ES upgrade
-if [[ "$LAST_UPDATE_VERSION" -le "20240506" ]]; then
+if [[ "$LAST_UPDATE_VERSION" -le "20260811" ]]; then
   rm -rf "/storage/.config/emulationstation/scripts/"
 
   sed -i '
@@ -128,10 +128,6 @@ if [[ "$LAST_UPDATE_VERSION" -le "20240506" ]]; then
   echo "wonderswancolor.bezel.overlay.shadow=1" >> ${CONF}
 
   if [ "$(cat /usr/config/.OS_ARCH)" == "RG351V" ] || [ "$(cat /usr/config/.OS_ARCH)" == "RG351MP" ] || [ "$(cat /usr/config/.OS_ARCH)" == "RG552" ]; then
-    echo "gba.bezel.overlay.grid=1" >> ${CONF}
-    echo "gba.bezel.overlay.shadow=1" >> ${CONF}
-    echo "gbah.bezel.overlay.grid=1" >> ${CONF}
-    echo "gbah.bezel.overlay.shadow=1" >> ${CONF}
     echo "arduboy.bezel.overlay.grid=1" >> ${CONF}
     echo "arduboy.bezel.overlay.shadow=1" >> ${CONF}
   fi
@@ -262,10 +258,9 @@ if [ -d /storage/openbor ]; then
   fi
 fi
 
-## 2022-04-04
-## enforce update of retrorun.cfg and reotrarch-core-options.cfg
+## Update emulator defaults and preserve RetroRun settings
 cp -rf /usr/config/retroarch/retroarch-core-options.cfg /storage/roms/gamedata/retroarch/retroarch-core-options.cfg
-cp -rf /usr/config/distribution/configs/retrorun.cfg /storage/.config/distribution/configs/retrorun.cfg
+/usr/bin/retrorun-config-sync --merge-defaults
 
 ## 2022-04-04
 ## enable new frameskip option for flycast core

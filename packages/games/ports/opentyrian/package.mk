@@ -11,10 +11,21 @@ PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_net"
 PKG_LONGDESC="An open-source port of the DOS shoot-em-up Tyrian."
 PKG_TOOLCHAIN="make"
 
+post_patch() {
+  sed -i '1i #include <stdlib.h>' ${PKG_BUILD}/src/animlib.c
+}
+
 pre_configure_target() {
-  CFLAGS+=" -I$(get_build_dir SDL2)/include"
-  CFLAGS+=" -I$(get_build_dir SDL2_net)"
-  export LDFLAGS="${LDFLAGS} -lSDL2 -lSDL2_net"
+  export SDL_CONFIG="${SYSROOT_PREFIX}/usr/bin/sdl2-config"
+}
+
+make_target() {
+  make \
+    CC="${CC}" \
+    CFLAGS="${CFLAGS} -I${SYSROOT_PREFIX}/usr/include/SDL2" \
+    LDFLAGS="${LDFLAGS} -L${SYSROOT_PREFIX}/usr/lib" \
+    LDLIBS="-lSDL2_net -lSDL2 -lm" \
+    WITH_NETWORK=true
 }
 
 makeinstall_target() {

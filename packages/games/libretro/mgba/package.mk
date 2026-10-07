@@ -3,27 +3,29 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="mgba"
-PKG_VERSION="6dce57eef127dc4cc292644f38196e0e7c58590c"
-PKG_SHA256="2195b204a7949551ef6ad935497566dc80960bae58fd803183b84ddeca77e5c9"
+PKG_VERSION="e31759b24e7a4e3899285ff720d7b573ac328ae7"
+PKG_SHA256="396d749cce8fe3358b29cbb1db479b1816a151bd688ee45b1d241503cbc40243"
 PKG_LICENSE="MPLv2.0"
 PKG_SITE="https://github.com/libretro/mgba"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="mGBA is a new emulator for running Game Boy Advance games. It aims to be faster and more accurate than many existing Game Boy Advance emulators, as well as adding features that other emulators lack."
-PKG_TOOLCHAIN="make"
+PKG_TOOLCHAIN="cmake"
 
-if [[ "${DEVICE}" == RG351P ]] || [[ "${DEVICE}" == RG351V ]]; then
-  PKG_PATCH_DIRS="rumble"
-fi
-
-make_target() {
-  cd ${PKG_BUILD}
-  if [[ "${ARCH}" =~ "arm" ]]; then
-    make -f Makefile.libretro platform=unix-armv HAVE_NEON=1
-  else
-    make -f Makefile.libretro platform=goadvance
-  fi
-}
+PKG_CMAKE_OPTS_TARGET="-DCMAKE_BUILD_TYPE=Release \
+                       -DBUILD_LIBRETRO=ON \
+                       -DSKIP_LIBRARY=ON \
+                       -DBUILD_QT=OFF \
+                       -DBUILD_SDL=OFF \
+                       -DUSE_DISCORD_RPC=OFF \
+                       -DUSE_EDITLINE=OFF \
+                       -DUSE_EPOXY=OFF \
+                       -DBUILD_GLES3=OFF \
+                       -DBUILD_GLES2=ON \
+                       -DUSE_MINIZIP=OFF \
+                       -DUSE_LIBZIP=OFF \
+                       -DUSE_ELF=OFF \
+                       -DUSE_LUA=OFF"
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro

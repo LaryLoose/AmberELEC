@@ -3,8 +3,8 @@
 # Copyright (C) 2020-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="glsl-shaders"
-PKG_VERSION="ebe123c55fa8538ec6abfa3eaa22d87f91e36679"
-PKG_SHA256="fa08ae608493496592a001ade52baf2dc90fca8e0a06de9cbd1726befa5a8e90"
+PKG_VERSION="2b2c5ee3fd8e1a3884e20ed424fd9bfbc51cbb3d"
+PKG_SHA256="018c56817f5f2828821489871063609a097557948b295a3ca8c86cf9ac4379b7"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/libretro/glsl-shaders"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -16,20 +16,10 @@ configure_target() {
   cd ${PKG_BUILD}
 }
 
-#makeinstall_target() {
-#  make install INSTALLDIR="${INSTALL}/usr/share/common-shaders"
-#  cp -rf ${PKG_DIR}/shaders/* ${INSTALL}/usr/share/common-shaders
-#}
-
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/share/common-shaders
-
-  rsync -a \
-    --exclude='.install_pkg' \
-    ${PKG_BUILD}/ \
-    ${INSTALL}/usr/share/common-shaders/
-
-  cp -rf ${PKG_DIR}/shaders/* ${INSTALL}/usr/share/common-shaders
+  cp -rf * ${INSTALL}/usr/share/common-shaders/
+  cp -rf ${PKG_DIR}/shaders/* ${INSTALL}/usr/share/common-shaders/
 }
 
 post_makeinstall_target() {

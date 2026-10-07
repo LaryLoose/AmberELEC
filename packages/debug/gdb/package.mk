@@ -7,7 +7,7 @@ PKG_VERSION="17.2"
 PKG_SHA256="1c036c0d72e4b3d1fb5c94c88632add6f9d76f4d7c4d2ea793c12a9f19a3228c"
 PKG_LICENSE="GPL"
 PKG_SITE="http://www.gnu.org/software/gdb/"
-PKG_URL="http://ftpmirror.gnu.org/gdb/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+PKG_URL="https://ftp.gnu.org/gnu/gdb/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain expat gmp mpfr ncurses zlib"
 PKG_LONGDESC="GNU Project debugger, allows you to see what is going on inside another program while it executes."
 

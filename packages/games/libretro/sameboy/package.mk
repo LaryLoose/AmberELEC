@@ -3,22 +3,20 @@
 # Copyright (C) 2020-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="sameboy"
-PKG_VERSION="208ba4afabffab9edde416f2dbb8ae459e34adb8"
+PKG_VERSION="8230189896a8bb6598574d302ba0ad3658f98ab4"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/LIJI32/SameBoy"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain rgbds:host"
+PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Gameboy and Gameboy Color emulator written in C"
 PKG_TOOLCHAIN="make"
 PKG_GIT_CLONE_BRANCH="libretro"
 
 make_target() {
-  # The BootROM build races on the shared host tool build/pb12 (compiled and run by
-  # several boot ROM targets in parallel -> "Permission denied"). Build serially.
-  PATH=/usr/bin:$PATH make -j1 libretro
+  make -C libretro BOOTROMS_DIR=${PKG_BUILD}/BootROMs/prebuilt
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp ${PKG_BUILD}/build/bin/sameboy_libretro.so ${INSTALL}/usr/lib/libretro/
+  cp ${PKG_BUILD}/sameboy_libretro.so ${INSTALL}/usr/lib/libretro/
 }

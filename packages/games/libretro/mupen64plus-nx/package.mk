@@ -2,8 +2,8 @@
 # Copyright (C) 2020-present Fewtarius
 
 PKG_NAME="mupen64plus-nx"
-PKG_VERSION="58b9daf940fb43f09c3984c6a7c730f4b4c24861"
-PKG_SHA256="858e2e5e435ed4543809d65d622efdc0738b8ff9e83185e6cea0725699a03661"
+PKG_VERSION="f275caf4b2bfa1e6d1c51636746ea793f3d80320"
+PKG_SHA256="1810b7bbdc4abfdeee8a9f7f99c4a91dab601a228935802317c25a43d7cf9dbb"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/mupen64plus-libretro-nx"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -13,15 +13,17 @@ PKG_TOOLCHAIN="make"
 
 pre_configure_target() {
   sed -e "s|^GIT_VERSION ?.*$|GIT_VERSION := \" ${PKG_VERSION:0:7}\"|" -i Makefile
+}
 
-  if [ "${DEVICE}" = "RG552" ]; then
-    PKG_MAKE_OPTS_TARGET+=" platform=RK3399 HAVE_PARALLEL_RSP=1"
-  else
-    PKG_MAKE_OPTS_TARGET+=" platform=RK3326 HAVE_PARALLEL_RSP=1"
-  fi
+make_target() {
+  cd ${PKG_BUILD}
+  local platform="RK3326"
+  [ "${DEVICE}" = "RG552" ] && platform="RK3399"
+
+  make platform="${platform}" HAVE_PARALLEL_RSP=1
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp mupen64plus_next_libretro.so ${INSTALL}/usr/lib/libretro/
+  cp ${PKG_BUILD}/mupen64plus_next_libretro.so ${INSTALL}/usr/lib/libretro/
 }

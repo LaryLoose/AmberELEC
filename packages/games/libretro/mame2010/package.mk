@@ -3,8 +3,8 @@
 # Copyright (C) 2020-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="mame2010"
-PKG_VERSION="29095383c0281100fee2ee09f1438d8ae990c510"
-PKG_SHA256="7994c34e3aca361ebb7d0aa9000e1a1107704512a06ee4e2cd07c87322c3cb03"
+PKG_VERSION="484456818393505dd4367e6e4c116c573c04a1ec"
+PKG_SHA256="2c00d52864e1ae4b0eb3335de89f29b1a8ebfe173c9e6910b302e379e92594a8"
 PKG_LICENSE="MAME"
 PKG_SITE="https://github.com/libretro/mame2010-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -13,15 +13,14 @@ PKG_LONGDESC="Late 2010 version of MAME (0.139) for libretro. Compatible with MA
 PKG_TOOLCHAIN="make"
 
 make_target() {
-  if [ "${ARCH}" == "arm" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=0 ARM_ENABLED=1 LCPU=arm
-  elif [ "${ARCH}" == "i386" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=0 ARM_ENABLED=0 LCPU=x86
-  elif [ "${ARCH}" == "x86_64" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=1 ARM_ENABLED=0 LCPU=x86_64
-  elif [ "${ARCH}" == "aarch64" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=1 ARM_ENABLED=1 LCPU=arm64
-  fi
+  make CC="${CXX}" \
+       CXX="${CXX}" \
+       LD="${CXX} -shared" \
+       PLATCFLAGS="${CFLAGS}" \
+       LDFLAGS="${LDFLAGS} -shared" \
+       PTR64=1 \
+       ARM_ENABLED=1 \
+       LCPU=arm64
 }
 
 makeinstall_target() {

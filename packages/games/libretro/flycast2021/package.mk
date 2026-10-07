@@ -2,8 +2,8 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="flycast2021"
-PKG_VERSION="b897744e27c730c7519784b2aef12ba7f658de31"
-PKG_SHA256="677a9b4f4870e59dd896cb14852af6bfdcee661823f0b87a25f1430f0bae0972"
+PKG_VERSION="45bd2f4e59708a7c16a5bb1cb90a94d1b39e330d"
+PKG_SHA256="5ebf68c4548e5ba0521478f5172abd7f2ca5a3e15060cb78da011e3b03f3fb10"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/flycast"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -16,24 +16,31 @@ pre_configure_target() {
   sed -i 's/CFLAGS   :=//' ${PKG_BUILD}/Makefile
   sed -i 's/CXXFLAGS   :=//' ${PKG_BUILD}/Makefile
   sed -i 's/LDFLAGS   :=//' ${PKG_BUILD}/Makefile
-
-  sed -i 's/^ASFLAGS.*/ASFLAGS :=/g' ${PKG_BUILD}/Makefile
-
   sed -i 's/define CORE_OPTION_NAME "reicast"/define CORE_OPTION_NAME "flycast2021"/g' core/libretro/libretro_core_option_defines.h
   sed -i 's/"Flycast"/"Flycast 2021"/g' core/libretro/libretro.cpp
   sed -i 's/RETRO_PIXEL_FORMAT_XRGB8888/RETRO_PIXEL_FORMAT_RGB565/g' core/libretro/libretro.cpp
-
-  # bundled libzip/mkstemp.c calls getpid() without <unistd.h>; GCC 14+ makes the
-  # implicit declaration an error (getpid returns int, so demoting to a warning is safe).
   export CFLAGS="${CFLAGS} -Wno-error=implicit-function-declaration"
-
-  PKG_MAKE_OPTS_TARGET="GIT_VERSION=${PKG_VERSION:0:7}"
 }
 
-pre_make_target() {
-  export BUILD_SYSROOT=${SYSROOT_PREFIX}
-  export ASFLAGS=""
-  PKG_MAKE_OPTS_TARGET+=" ARCH=arm64 platform=arm64"
+make_target() {
+  local my_cc="${CC}"
+  local my_cxx="${CXX}"
+
+  if [ -n "${CCACHE_DIR}" ] && [ -x "${TOOLCHAIN}/bin/ccache" ]; then
+    my_cc="${TOOLCHAIN}/bin/ccache ${CC}"
+    my_cxx="${TOOLCHAIN}/bin/ccache ${CXX}"
+  fi
+
+  export BUILD_SYSROOT="${SYSROOT_PREFIX}"
+
+  make ARCH=arm \
+       platform=arm64 \
+       GIT_VERSION="${PKG_VERSION:0:7}" \
+       CC="${my_cc}" \
+       CXX="${my_cxx}" \
+       SHARED="-shared" \
+       LDFLAGS="${LDFLAGS}" \
+       ${MAKEFLAGS}
 }
 
 makeinstall_target() {

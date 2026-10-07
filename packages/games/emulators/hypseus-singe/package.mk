@@ -3,11 +3,11 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="hypseus-singe"
-PKG_VERSION="8334d98367e0e02b3fe6e390e13560b39e1b1c28"
+PKG_VERSION="4cfd20d834ee6cf42c1c347ffd2627d87aaf8e2f"
 PKG_LICENSE="GPL3"
 PKG_SITE="https://github.com/DirtBagXon/hypseus-singe"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain SDL2 libvorbis"
+PKG_DEPENDS_TARGET="toolchain SDL2 libvorbis zlib libzip"
 PKG_LONGDESC="Hypseus is a fork of Daphne. A program that lets one play the original versions of many laserdisc arcade games on one's PC."
 PKG_TOOLCHAIN="cmake-make"
 
@@ -16,7 +16,7 @@ pre_configure_target() {
                       -DCMAKE_RULE_MESSAGES=OFF \
                       -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
                       -DCMAKE_C_FLAGS_RELEASE="-DNDEBUG" \
-                      -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG" "
+                      -DCMAKE_CXX_FLAGS_RELEASE="-DNDEBUG""
 
   mkdir -p ${INSTALL}/usr/config/distribution/configs/hypseus
   ln -fs /storage/roms/laserdisc/roms ${INSTALL}/usr/config/distribution/configs/hypseus/roms

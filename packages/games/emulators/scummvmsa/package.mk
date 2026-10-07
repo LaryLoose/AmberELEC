@@ -8,10 +8,10 @@ PKG_NAME="scummvmsa"
 PKG_LICENSE="GPL2"
 PKG_SITE="https://github.com/scummvm/scummvm"
 #PKG_URL=""
-PKG_VERSION="8a2188e727e5e1e1a10a7a6d7ac20eeede033d73"
-PKG_SHA256="934c3593f9bf8ec6ea6c9423e8c423e90c313bab5ac880303f6d8b92e41589ab"
+PKG_VERSION="58f8f79224d3c9a0b99dd78fc41f8d69fd6ced89"
+PKG_SHA256="c753d6d51c81da8c08dbf348eb6f60f9465175c5127cab70208fd6567042e79a"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_net freetype fluidsynth libmad libtheora libmpeg2 fribidi libjpeg-turbo curl tinyxml giflib"
+PKG_DEPENDS_TARGET="toolchain SDL2 SDL2_net freetype fluidsynth libmad libtheora"
 PKG_DEPENDS_UNPACK="scummvm"
 PKG_LONGDESC="ScummVM is a program which allows you to run certain classic graphical point-and-click adventure games, provided you already have their data files."
 
@@ -20,17 +20,22 @@ PKG_LONGDESC="ScummVM is a program which allows you to run certain classic graph
 #  tar --strip-components=1 -xf ${SOURCES}/scummvm/scummvm-${PKG_VERSION}.tar.gz -C ${PKG_BUILD}
 #}
 
-pre_configure_target() { 
+pre_configure_target() {
   sed -i "s|sdl-config|sdl2-config|g" ${PKG_BUILD}/configure
   if [[ "${DEVICE}" == RG552 ]]; then
     sed -i "s|static const int guiBaseValues\[\] = { 150, 125, 100, 75, -1 };|static const int guiBaseValues\[\] = { 250, 125, 100, 75, -1 };|g" ${PKG_BUILD}/gui/options.cpp
   fi
-  TARGET_CONFIGURE_OPTS="--host=${TARGET_NAME} --backend=sdl --with-sdl-prefix=${SYSROOT_PREFIX}/usr/bin --disable-debug --enable-release --enable-all-engines --enable-vkeybd --opengl-mode=gles2\
-  --enable-plugins --default-dynamic"
+  export LDFLAGS="${LDFLAGS} -Wl,-rpath-link,${SYSROOT_PREFIX}/usr/lib -lrga -lpulse"
+  TARGET_CONFIGURE_OPTS="--host=${TARGET_NAME} \
+                         --backend=sdl \
+                         --with-sdl-prefix=${SYSROOT_PREFIX}/usr \
+                         --disable-debug \
+                         --enable-release \
+                         --enable-vkeybd \
+                         --opengl-mode=gles2"
 
-  #enable monkey4
-  #sed -i 's|add_engine monkey4 "Escape from Monkey Island" no|add_engine monkey4 "Escape from Monkey Island" yes|g' ${PKG_BUILD}/engines/grim/configure.engine
-
+  # Enable monkey4
+  sed -i 's|add_engine monkey4 "Escape from Monkey Island" no|add_engine monkey4 "Escape from Monkey Island" yes|g' ${PKG_BUILD}/engines/grim/configure.engine
 }
 
 post_makeinstall_target() {
@@ -39,21 +44,19 @@ post_makeinstall_target() {
   if [[ "${DEVICE}" == RG552 ]]; then
     sed -i "s|gui_scale=100|gui_scale=250|g" ${INSTALL}/usr/config/scummvm/scummvm.ini
   fi
-  
-  cp -rf ${PKG_DIR}/extra/* ${INSTALL}/usr/local/share/scummvm/
-  
- # mkdir -p ${INSTALL}/usr/config/distribution/modules/
- # cp "${PKG_DIR}/Scan ScummVM Games.sh" ${INSTALL}/usr/config/distribution/modules/
+
+  mkdir -p ${INSTALL}/usr/config/distribution/modules/
+  cp "${PKG_DIR}/Scan ScummVM Games.sh" ${INSTALL}/usr/config/distribution/modules/
 
   mv ${INSTALL}/usr/local/bin ${INSTALL}/usr/
   cp -rf ${PKG_DIR}/scummvm.sh ${INSTALL}/usr/bin
   chmod 755 ${INSTALL}/usr/bin/*
-	
+
   for i in appdata applications doc icons man; do
     rm -rf "${INSTALL}/usr/local/share/${i}"
   done
 
-#  for i in residualvm.zip scummclassic.zip; do
-#    rm -rf "${INSTALL}/usr/local/share/scummvm/${i}"
-#  done
+  for i in residualvm.zip scummclassic.zip; do
+    rm -rf "${INSTALL}/usr/local/share/scummvm/${i}"
+  done
 }

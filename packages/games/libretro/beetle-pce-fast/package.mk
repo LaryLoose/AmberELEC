@@ -3,8 +3,8 @@
 # Copyright (C) 2020-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="beetle-pce-fast"
-PKG_VERSION="15f6b56912df40593261b369d8c7f45911c9e11d"
-PKG_SHA256="19f8219595f4d2b442c159bae0235c3a68e76f4f36740941d619853128478a44"
+PKG_VERSION="02c71c95fdfe90bc445bc5be8147abf7b72af3ef"
+PKG_SHA256="17a7b2f0fb27ca20b71d87a12b46763b9c99115c62b1fe9d39b4592b1a958ec2"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/beetle-pce-fast-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

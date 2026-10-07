@@ -2,7 +2,7 @@
 *.patch -text
 
 # build directorys
-/build.*/
+/build.*
 /.fakeroot.*
 /.ccache-*
 /.env
@@ -43,6 +43,7 @@ mkpkg-temp
 # crap
 .DS_Store
 .directory
+.config
 
 repo/
 repo

@@ -2,26 +2,35 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="scummvm"
-PKG_VERSION="8fea3b5cdead41bf588a7d93c47dc8a1492b67c8"
-PKG_SHA256="42a812ef8ea647e4460923b57e0781035784c8c9eda9d7c1da0bfbe26eeff6a0"
+PKG_VERSION="58f8f79224d3c9a0b99dd78fc41f8d69fd6ced89"
+PKG_SHA256="c753d6d51c81da8c08dbf348eb6f60f9465175c5127cab70208fd6567042e79a"
 PKG_LICENSE="GPL2"
 PKG_SITE="https://github.com/scummvm/scummvm"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="ScummVM is a program which allows you to run certain classic graphical point-and-click adventure games, provided you already have their data files."
-
-configure_target() {
-  :
-}
+PKG_TOOLCHAIN="make"
 
 make_target() {
-  cd ${PKG_BUILD}/backends/platform/libretro
-  make all
+  local my_cc="${CC}"
+  local my_cxx="${CXX}"
+
+  if [ -n "${CCACHE_DIR}" ] && [ -x "${TOOLCHAIN}/bin/ccache" ]; then
+    my_cc="${TOOLCHAIN}/bin/ccache ${CC}"
+    my_cxx="${TOOLCHAIN}/bin/ccache ${CXX}"
+  fi
+
+  make -C ${PKG_BUILD}/backends/platform/libretro all \
+       CC="${my_cc}" \
+       CXX="${my_cxx}" \
+       SHARED="-shared" \
+       LDFLAGS="${LDFLAGS} -shared" \
+       ${MAKEFLAGS}
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp scummvm_libretro.so ${INSTALL}/usr/lib/libretro/
+  cp ${PKG_BUILD}/backends/platform/libretro/scummvm_libretro.so ${INSTALL}/usr/lib/libretro/
   mkdir -p ${INSTALL}/usr/share/scummvm
-  unzip scummvm.zip -d ${INSTALL}/usr/share/
+  unzip -o ${PKG_BUILD}/backends/platform/libretro/scummvm.zip -d ${INSTALL}/usr/share/
 }

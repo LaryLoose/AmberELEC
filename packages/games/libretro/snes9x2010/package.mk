@@ -3,14 +3,20 @@
 # Copyright (C) 2022-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="snes9x2010"
-PKG_VERSION="a7a4bfaed4c6408908c76af20ad625e1645c3d11"
-PKG_SHA256="b00f2d49237cf2199617cc2437c9538e42bb7fd2c6cde7dbe2dc0b599097e8ff"
+PKG_VERSION="421a8d9449031245f1dfdb632b84548a9f19fddd"
+PKG_SHA256="180c0a81a8a2fbc2f10165f09414ff22f13fa086521a4caa6679bbd42521b951"
 PKG_LICENSE="Non-commercial"
 PKG_SITE="https://github.com/libretro/snes9x2010"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Snes9x 2010. Port of Snes9x 1.52+ to Libretro (previously called SNES9x Next). Rewritten in C and several optimizations and speedhacks."
 PKG_TOOLCHAIN="make"
+
+pre_configure_target() {
+  sed -i 's/\-O[23]//' ${PKG_BUILD}/Makefile.libretro
+  sed -i 's/CFLAGS :=//' ${PKG_BUILD}/Makefile.libretro
+  sed -i 's/CXXFLAGS :=//' ${PKG_BUILD}/Makefile.libretro
+}
 
 make_target() {
   make -f Makefile.libretro

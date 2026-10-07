@@ -2,8 +2,8 @@
 # Copyright (C) 2019-present Shanti Gilbert (https://github.com/shantigilbert)
 
 PKG_NAME="mupen64plussa-input-sdl"
-PKG_VERSION="076f551c9ac63591d8986a5cc07072b4b736ffd9"
-PKG_SHA256="32aaf8c048e5b118b8b6e0cdcae0f44e8ddda5e969030a408b2652a4f6797f4e"
+PKG_VERSION="842c39e89749aa3a8d02202b2afddd20b29cdfdb"
+PKG_SHA256="7d69413251ed2e772098a73ba1815c9310243f3ccc7e99ecbda33dc4d7b5d283"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/mupen64plus/mupen64plus-input-sdl"
 PKG_URL="https://github.com/mupen64plus/mupen64plus-input-sdl/archive/${PKG_VERSION}.tar.gz"

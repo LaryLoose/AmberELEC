@@ -2,23 +2,16 @@
 # Copyright (C) 2024-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="doublecherrygb"
-PKG_VERSION="33c09c13856a8d36c8922a1a1c319c0b1259100f"
-PKG_SHA256="b0d4c22e18814acc658324883553a2ca7224ed806ab4fa5308fecb3545475cc0"
+PKG_VERSION="1587acddb2b575ed2e6c6b1e2c2daaa26bb42134"
+PKG_SHA256="472783d978a7309bb47f093e588b5951367ce54c120ef785de04b677b2683ccc"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/TimOelrichs/doublecherryGB-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="libretro gameboy core with up to 16 players support"
-PKG_TOOLCHAIN="make"
+PKG_TOOLCHAIN="cmake"
 
 makeinstall_target() {
-echo "PWD: $(pwd)"
-  find . -name "*.so" -print
-  
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp ../DoubleCherryGB_libretro.so ${INSTALL}/usr/lib/libretro/
-}
-
-make_target() {
-  make -C $PKG_BUILD
+  cp DoubleCherryGB_libretro.so ${INSTALL}/usr/lib/libretro/
 }
