@@ -10,6 +10,13 @@ if [[ "${DEVICE}" =~ (RG351|RK3326) ]]; then
 elif [[ "${DEVICE}" =~ RG552 ]]; then
   PKG_VERSION="0c15ff851c1d24fac588bd4427bb45b9ab88f452"
   PKG_URL="https://github.com/AmberELEC/kernel_rg552/archive/${PKG_VERSION}.tar.gz"
+elif [[ "${DEVICE}" =~ ^(RG353|RG503|RK3566)$ ]]; then
+  PKG_VERSION="6564772b54d11ee1baba9e5c937d839829405c80"
+  PKG_GIT_CLONE_BRANCH="master"
+  PKG_GIT_CLONE_SINGLE="yes"
+  PKG_SHA256=""
+  PKG_SITE="https://github.com/AmberELEC/kernel-rk356x"
+  PKG_URL="${PKG_SITE}.git"
 fi
 
 PKG_LICENSE="GPL"
@@ -137,6 +144,7 @@ pre_make_target() {
   fi
 
   # Add EXFat, kinda gross but I don't want it as a module.
+  if [[ ! "${DEVICE}" =~ ^(RG353|RG503|RK3566)$ ]]; then
   PREEXF=`pwd`
   cd ${PKG_BUILD}/fs
   git clone https://github.com/arter97/exfat-linux.git
@@ -151,6 +159,7 @@ pre_make_target() {
   sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
   sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
   cd ${PREEXF}
+  fi
 
   # out-of-tree wifi drivers have broken header guards -> GCC 15 -Wheader-guard is fatal
   export KCFLAGS="${KCFLAGS} -Wno-header-guard"
@@ -166,9 +175,11 @@ pre_make_target() {
 
 make_target() {
   kernel_make modules
-  kernel_make INSTALL_MOD_PATH=${INSTALL}/$(get_kernel_overlay_dir) modules_install
-  rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/build
-  rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/source
+  if [[ ! "${DEVICE}" =~ ^(RG353|RG503|RK3566)$ ]]; then
+    kernel_make INSTALL_MOD_PATH=${INSTALL}/$(get_kernel_overlay_dir) modules_install
+    rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/build
+    rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/source
+  fi
 
   if [ "${PKG_BUILD_PERF}" = "yes" ] ; then
     ( cd tools/perf
@@ -223,6 +234,12 @@ make_target() {
   # file with symbols from built-in and external modules.
   # Without that it'll contain only the symbols from the kernel
   kernel_make ${KERNEL_TARGET} ${KERNEL_MAKE_EXTRACMD} modules
+
+  if [[ "${DEVICE}" =~ ^(RG353|RG503|RK3566)$ ]]; then
+    kernel_make INSTALL_MOD_PATH=${INSTALL}/$(get_kernel_overlay_dir) modules_install
+    rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/build
+    rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/source
+  fi
 
   if [ -n "${KERNEL_UIMAGE_TARGET}" ] ; then
     # determine compression used for kernel image
@@ -308,6 +325,9 @@ makeinstall_init() {
 }
 
 post_install() {
+  if [[ "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
+    rm -f ${INSTALL}/usr/lib/udev/rules.d/99-powertargets.rules
+  fi
   mkdir -p ${INSTALL}/$(get_full_firmware_dir)/
 
   # regdb and signature is now loaded as firmware by 4.15+

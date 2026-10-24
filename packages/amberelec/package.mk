@@ -25,14 +25,14 @@ else
 
   PKG_EMUS="${LIBRETRO_CORES}"
 
-  if [[ "${DEVICE}" == "RG552" ]]; then
+  if [[ "${DEVICE}" == "RG552" || "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
     PKG_EMUS+=" ${LIBRETRO_CORES_EXTRA}"
   fi
 
   PKG_EMUS+=" advancemame ppssppsa amiberry hatarisa openbor scummvmsa solarus hypseus-singe ecwolf lzdoom gzdoom raze drastic duckstation mupen64plussa piemu yabasanshiroSA redream"
 fi
 
-PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace odroidgoa-utils rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest joytest batterymonitor evdev-joystick gptokeyb fbgrab pmon squashfs-tools moonlight-embedded"
+PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace odroidgoa-utils rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest joytest batterymonitor evdev-joystick gptokeyb fbgrab drm_tool pmon squashfs-tools moonlight-embedded"
 PKG_RETROPIE_DEP="pyudev six git dbus-python coreutils"
 PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_RETROPIE_DEP} ${PKG_EMUS} ports webui"
 
@@ -42,7 +42,7 @@ make_target() {
 
 makeinstall_target() {
   ## Remove libretro cores from unsupported devices
-  if [[ ! ${DEVICE} == "RG552" ]]; then
+  if [[ "${DEVICE}" != "RG552" && ! "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
     mkdir -p ${INSTALL}/usr/config/emulationstation
     cp -f $(get_build_dir emulationstation)/.install_pkg/usr/config/emulationstation/es_systems.cfg ${INSTALL}/usr/config/emulationstation/es_systems.cfg
     for CORE in ${LIBRETRO_CORES_EXTRA}; do
@@ -106,7 +106,7 @@ makeinstall_target() {
 
   if [ "${DEVICE}" == "RG351P" ]; then
     cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.351p ${INSTALL}/usr/config/distribution/configs/distribution.conf
-  elif  [ "${DEVICE}" == "RG351V" ] || [ "${DEVICE}" == "RG351MP" ]; then
+  elif  [ "${DEVICE}" == "RG351V" ] || [ "${DEVICE}" == "RG351MP" ] || [[ "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
     cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.351v ${INSTALL}/usr/config/distribution/configs/distribution.conf
   elif [ "${DEVICE}" == "RG552" ]; then
     cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.552  ${INSTALL}/usr/config/distribution/configs/distribution.conf
@@ -133,8 +133,10 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/share/retroarch-overlays
   if [ "${DEVICE}" == "RG351P" ]; then
     cp -r ${PKG_DIR}/overlay-p/* ${INSTALL}/usr/share/retroarch-overlays
-  elif [ "${DEVICE}" == "RG351V" ] || [ "${DEVICE}" == "RG351MP" ]; then
+  elif [ "${DEVICE}" == "RG351V" ] || [ "${DEVICE}" == "RG351MP" ] || [ "${DEVICE}" == "RG353" ]; then
     cp -r ${PKG_DIR}/overlay-v/* ${INSTALL}/usr/share/retroarch-overlays
+  elif [ "${DEVICE}" == "RG503" ]; then
+    cp -r ${PKG_DIR}/overlay-503/* ${INSTALL}/usr/share/retroarch-overlays
   elif [ "${DEVICE}" == "RG552" ]; then
     cp -r ${PKG_DIR}/overlay-552/* ${INSTALL}/usr/share/retroarch-overlays
   fi
@@ -175,6 +177,8 @@ post_install() {
     cp -f  ${PKG_DIR}/clocks/RK3326/clocklimits ${INSTALL}/etc
   elif [[ "${DEVICE}" == "RG552" ]]; then
     cp -f  ${PKG_DIR}/clocks/RK3399/clocklimits ${INSTALL}/etc
+  elif [[ "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
+    cp -f ${PKG_DIR}/clocks/RK3566/clocklimits ${INSTALL}/etc
   fi
 
   echo "" >${INSTALL}/etc/issue

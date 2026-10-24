@@ -29,8 +29,15 @@ mark_hint_done() {
   echo "delete this file to trigger $desc at the next start" > "$file"
 }
 
-# Show splash logo
-/usr/bin/show_splash.sh &
+# Show the initialization message while preparing a fresh configuration.
+if [ ! -e "/storage/.newcfg" ]; then
+  . /usr/lib/libreelec/functions
+  StartInitialization
+  trap StopInitialization EXIT
+else
+  /usr/bin/show_splash.sh &
+  SPLASH_PID=$!
+fi
 
 DEVICE=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
 
@@ -73,11 +80,6 @@ then
   systemctl reboot
 fi
 
-if [ ! -e "/storage/.newcfg" ]
-then
-  echo -en '\e[0;0H\e[37mPlease wait, initializing system...\e[0m' >/dev/console
-fi
-
 # It seems some slow SDcards have a problem creating the symlink on time :/
 CONFIG_DIR="/storage/.emulationstation"
 CONFIG_DIR2="/storage/.config/emulationstation"
@@ -94,6 +96,8 @@ if [ ! -e "$DEFAULT_THEME_STORAGE" ]; then
 fi
 
 if hint_should_run "distribution"; then
+  # Wait only for configuration copies, not the animation process.
+  (
   # Create the distribution directory if it doesn't exist, sync it if it does
   if [ ! -d "/storage/.config/distribution" ]
   then
@@ -142,7 +146,12 @@ if hint_should_run "distribution"; then
 
   # Wait for the rsync processes to finish.
   wait
+  )
   mark_hint_done "distribution"
+fi
+
+if [ -n "$SPLASH_PID" ]; then
+  wait "$SPLASH_PID"
 fi
 
 #if [ ! -e "/storage/roms/homebrew/gamelist.xml" ]
@@ -261,7 +270,7 @@ then
     echo 0 > /sys/class/gpio/gpio113/value
   elif [ "$DEVICE" == "Anbernic RG351P" ]; then
     echo 0 > /sys/class/gpio/gpio110/value
-  else
+  elif [[ ! "$EE_DEVICE" =~ ^(RG353|RG503)$ ]]; then
     echo 0 > /sys/class/gpio/gpio5/value
   fi
 fi
@@ -286,7 +295,7 @@ if [ "$DEVICE" == "Anbernic RG351MP" ]; then
   fi
 fi
 
-if [ "$DEVICE" == "Anbernic RG351MP" ] || [ "$DEVICE" == "Magicx XU10" ] || [ "$DEVICE" == "Anbernic RG35" ]; then
+if [ "$DEVICE" == "Anbernic RG351MP" ] || [ "$DEVICE" == "Magicx XU10" ] || [ "$DEVICE" == "Anbernic RG35" ] || [[ "$EE_DEVICE" =~ ^(RG353|RG503)$ ]]; then
 	amixer -c 0 cset iface=MIXER,name='Playback Path' SPK_HP
 fi
 
@@ -294,7 +303,7 @@ fi
 # - This is the shortest, totally silent .wav I could create with audacity - duration is .001 seconds
 aplay /usr/bin/emustation-config-init.wav
 
-if [ "$EE_DEVICE" == "RG552" ] || [[ "$EE_DEVICE" =~ RG351 ]]; then
+if [ "$EE_DEVICE" == "RG552" ] || [[ "$EE_DEVICE" =~ RG351 ]] || [[ "$EE_DEVICE" =~ ^(RG353|RG503)$ ]]; then
   # For some reason the audio is being reseted to 100 at boot, so we reapply the saved settings here
   /usr/bin/odroidgoa_utils.sh vol $(get_ee_setting "audio.volume")
 fi
@@ -332,6 +341,11 @@ fi
 
 # What to start at boot?
 DEFE=$(get_ee_setting ee_boot)
+
+if [ -n "$INITIALIZATION_PID" ]; then
+  StopInitialization
+  /usr/bin/show_splash.sh
+fi
 
 case "$DEFE" in
 "Retroarch")

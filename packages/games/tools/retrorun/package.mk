@@ -2,7 +2,7 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="retrorun"
-PKG_VERSION="65f006003b58c5bdfdc6dea4d6506b17f24d7f91"
+PKG_VERSION="93f6b90ffba2d3c046a944224b4a82d11b406deb"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/AmberELEC/retrorun"
 PKG_URL="${PKG_SITE}.git"
@@ -10,7 +10,7 @@ PKG_DEPENDS_TARGET="toolchain libdrm libpng linux libevdev librga openal-soft cu
 PKG_TOOLCHAIN="make"
 
 pre_configure_target() {
-  if [[ "${DEVICE}" =~ RG353 ]]; then
+  if [[ "${DEVICE}" =~ ^(RG353|RG503)$ ]]; then
     local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm"
   else
     local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm -I$(get_build_dir linux)/include/uapi -I$(get_build_dir linux)/tools/include"
